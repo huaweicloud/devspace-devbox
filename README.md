@@ -1,6 +1,6 @@
 # devspace-devbox
 
-[![License](https://img.shields.io/badge/License-Apache-2.0-blue.svg)](LICENSE)
+[![License](https://badgen.net/static/License/Apache-2.0/blue)](LICENSE)
 
 开发者环境沙箱端侧项目，包含SDK、CLI
 
