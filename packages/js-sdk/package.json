@@ -1,0 +1,58 @@
+{
+  "name": "devbox-js-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript and JavaScript SDK for DevBox cloud sandboxes",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huaweicloud/devspace-devbox.git",
+    "directory": "packages/js-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/huaweicloud/devspace-devbox/issues"
+  },
+  "keywords": [
+    "devbox",
+    "sandbox",
+    "sdk",
+    "typescript"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "example": "npm run build && node examples/basic.mjs",
+    "validate": "npm run build && node examples/validate-full.mjs"
+  },
+  "homepage": "https://github.com/huaweicloud/devspace-devbox/tree/dev/packages/js-sdk#readme",
+  "dependencies": {
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@types/node": "^22.18.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
