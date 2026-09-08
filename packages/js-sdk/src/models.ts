@@ -42,9 +42,6 @@ export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
 export const LogsDirection = { Backward: "backward", Forward: "forward" } as const;
 export type LogsDirection = (typeof LogsDirection)[keyof typeof LogsDirection];
 
-export const NodeStatus = { Ready: "ready", Draining: "draining", Offline: "offline" } as const;
-export type NodeStatus = (typeof NodeStatus)[keyof typeof NodeStatus];
-
 export interface NetworkRule {
   headers?: Record<string, string>;
 }
@@ -112,11 +109,6 @@ export interface SandboxMetrics {
   timestamp?: Date;
 }
 
-export interface SnapshotInfo {
-  snapshotId: string;
-  names: string[];
-}
-
 export interface SandboxLogEntry {
   timestamp: Date;
   level: LogLevel;
@@ -167,72 +159,6 @@ export interface FileWatchEvent {
   type: string;
   path?: string;
   entry?: FileInfo;
-}
-
-export interface TemplateInput {
-  alias: string;
-  name: string;
-  public?: boolean;
-  vcpu?: number;
-  ramMb?: number;
-  totalDiskMb?: number;
-  startCommand?: string;
-}
-
-export interface TemplateInfo {
-  templateId: string;
-  namespace: string;
-  name?: string;
-  public: boolean;
-  createdBy?: string;
-  spawnCount: number;
-  createdAt?: Date;
-}
-
-export interface TemplateBuildInfo {
-  templateId: string;
-  buildId: string;
-  namespace?: string;
-  status?: string;
-  tag?: string;
-  vcpu?: number;
-  ramMb?: number;
-  totalDiskMb?: number;
-  kernelVersion?: string;
-  firecrackerVersion?: string;
-  reason?: string;
-  createdAt?: Date;
-}
-
-export interface TemplateDetail {
-  template: TemplateInfo;
-  builds: TemplateBuildInfo[];
-}
-
-export interface TemplateAliasInfo {
-  alias: string;
-  templateId: string;
-  namespace: string;
-}
-
-export interface TemplateFileInfo {
-  exists: boolean;
-  uploadUrl?: string;
-}
-
-export interface NodeInfo {
-  nodeId: string;
-  nodeName?: string;
-  clusterId?: string;
-  ipAddress?: string;
-  cpuTotal?: number;
-  cpuFree?: number;
-  ramTotalMb?: number;
-  ramFreeMb?: number;
-  diskTotalMb?: number;
-  diskFreeMb?: number;
-  currentSandboxCount?: number;
-  status?: string;
 }
 
 export interface Page<T> {
@@ -353,13 +279,6 @@ export function parseMetrics(value: WireObject): SandboxMetrics {
   };
 }
 
-export function parseSnapshot(value: WireObject): SnapshotInfo {
-  return {
-    snapshotId: stringValue(pick(value, "snapshotID", "snapshotId", "snapshot_id", "id")),
-    names: stringArray(value.names),
-  };
-}
-
 export function parseLogEntry(value: WireObject): SandboxLogEntry {
   const level = stringValue(pick(value, "level"));
   if (!Object.values(LogLevel).includes(level as LogLevel))
@@ -409,52 +328,6 @@ export function parseFileInfo(value: WireObject): FileInfo {
     group: optionalString(value.group),
     modifiedAt: optionalDate(pickOr(value, undefined, "modifiedTime", "modifiedAt", "modified_at")),
     symlinkTarget: optionalString(pickOr(value, undefined, "symlinkTarget", "symlink_target")),
-  };
-}
-
-export function parseTemplateInfo(value: WireObject): TemplateInfo {
-  return {
-    templateId: stringValue(pick(value, "template_id", "templateID", "templateId", "id")),
-    namespace: stringValue(pick(value, "namespace")),
-    name: optionalString(value.name),
-    public: Boolean(value.public ?? false),
-    createdBy: optionalString(value.created_by),
-    spawnCount: numberValue(value.spawn_count ?? 0),
-    createdAt: optionalDate(value.created_at),
-  };
-}
-
-export function parseTemplateBuild(value: WireObject): TemplateBuildInfo {
-  return {
-    templateId: stringValue(pick(value, "template_id", "templateID", "templateId")),
-    buildId: stringValue(pick(value, "build_id", "buildID", "buildId", "id")),
-    namespace: optionalString(value.namespace),
-    status: optionalString(value.status),
-    tag: optionalString(value.tag),
-    vcpu: optionalNumber(value.vcpu),
-    ramMb: optionalNumber(value.ram_mb),
-    totalDiskMb: optionalNumber(value.total_disk_mb),
-    kernelVersion: optionalString(value.kernel_version),
-    firecrackerVersion: optionalString(value.firecracker_version),
-    reason: optionalString(value.reason),
-    createdAt: optionalDate(value.created_at),
-  };
-}
-
-export function parseNode(value: WireObject): NodeInfo {
-  return {
-    nodeId: stringValue(pick(value, "node_id")),
-    nodeName: optionalString(value.node_name),
-    clusterId: optionalString(value.cluster_id),
-    ipAddress: optionalString(value.ip_address),
-    cpuTotal: optionalNumber(value.cpu_total),
-    cpuFree: optionalNumber(value.cpu_free),
-    ramTotalMb: optionalNumber(value.ram_total_mb),
-    ramFreeMb: optionalNumber(value.ram_free_mb),
-    diskTotalMb: optionalNumber(value.disk_total_mb),
-    diskFreeMb: optionalNumber(value.disk_free_mb),
-    currentSandboxCount: optionalNumber(value.current_sandbox_count),
-    status: optionalString(value.status),
   };
 }
 

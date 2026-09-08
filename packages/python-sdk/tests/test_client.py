@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
+import devbox
 from devbox import (
     AsyncDevBox,
     ConfigurationError,
@@ -19,6 +20,17 @@ from devbox import (
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
 from devbox.sandbox import _gateway_url
+
+
+def test_public_api_excludes_unavailable_manager_resources() -> None:
+    for name in ("SnapshotInfo", "Template", "NodeInfo"):
+        assert not hasattr(devbox, name)
+    for name in ("snapshot", "fork"):
+        assert not hasattr(devbox.Sandbox, name)
+
+    with client(lambda request: httpx.Response(204)) as api:
+        for name in ("snapshots", "templates", "nodes"):
+            assert not hasattr(api, name)
 
 
 def test_create_uses_manager_contract() -> None:
@@ -73,22 +85,17 @@ def test_lifecycle_uses_documented_paths_and_bodies() -> None:
         captured.append(request)
         if request.url.path == "/sandboxes":
             return httpx.Response(201, json=connection_response())
-        if request.url.path.endswith("/snapshots"):
-            return httpx.Response(201, json={"snapshotID": "snap_1", "names": ["checkpoint"]})
         return httpx.Response(204)
 
     with client(handler) as api:
         sandbox = api.sandboxes.create()
         sandbox.refresh(120)
-        snapshot = sandbox.snapshot("checkpoint")
 
     assert [item.url.path for item in captured] == [
         "/sandboxes",
         "/sandboxes/sbx_123/refreshes",
-        "/sandboxes/sbx_123/snapshots",
     ]
     assert json.loads(captured[1].content) == {"duration": 120}
-    assert snapshot.names == ("checkpoint",)
 
 
 def test_logs_metrics_and_aggregate_metrics() -> None:

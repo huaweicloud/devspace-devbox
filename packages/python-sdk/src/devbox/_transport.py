@@ -30,7 +30,7 @@ class SyncTransport:
         timeout: float,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        request_headers = {"User-Agent": f"devbox-python/{__version__}", **headers}
+        request_headers = {"User-Agent": f"devbox-python-sdk/{__version__}", **headers}
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers=request_headers,
@@ -188,7 +188,7 @@ class AsyncTransport:
         timeout: float,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        request_headers = {"User-Agent": f"devbox-python/{__version__}", **headers}
+        request_headers = {"User-Agent": f"devbox-python-sdk/{__version__}", **headers}
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers=request_headers,

@@ -76,12 +76,13 @@ with Sandbox.create("default", timeout=300) as sandbox:
 
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
-| `Sandbox` | `create`、`connect`、`set_timeout`、`refresh`、`kill` | 沙箱生命周期 |
-| `sandbox.commands` | `run`、`connect`、`list` | 执行、重连和查询进程 |
+| `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
+| `Sandbox` | `create`、`connect`、`get_info`、`is_running`、`set_timeout`、`refresh`、`kill`、`close` | 沙箱生命周期 |
+| `sandbox.commands` | `run`、`connect`、`list`、`send_stdin`、`close_stdin`、`send_signal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`make_dir`、`move`、`remove` | 远端文件操作 |
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输和目录监听 |
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
-| `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push` | Git 工作流 |
+| `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
 
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
 `sandbox.files.make_dir()`，而不是 `sandbox.make_dir()`。
@@ -116,7 +117,7 @@ from contextlib import closing
 with closing(sandbox.files.watch("/tmp/workspace")) as events:
     for event in events:
         print(event)
-        if event.get("name") == "done.txt":
+        if event.name == "done.txt":
             break
 ```
 
@@ -146,9 +147,6 @@ with DevBox() as client:
     print(sandbox.sandbox_id, len(page.items))
     sandbox.kill()
 ```
-
-`client.templates`、`client.snapshots` 和 `client.nodes` 属于管理面扩展资源，只有部署环境
-开放对应接口时才可调用，不属于基础使用路径。
 
 ## 异步调用
 

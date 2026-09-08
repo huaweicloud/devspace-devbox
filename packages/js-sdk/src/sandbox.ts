@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dispatcher } from "undici";
 import { Commands } from "./commands.js";
 import { type ConnectionConfig, type DevBoxOptions, resolveConfig } from "./config.js";
-import { type ErrorDetail, NotFoundError, ProtocolError } from "./errors.js";
+import { NotFoundError, ProtocolError } from "./errors.js";
 import { Filesystem } from "./filesystem.js";
 import { Git } from "./git.js";
 import { Transport } from "./internal/transport.js";
@@ -25,13 +25,11 @@ import {
   parseMetrics,
   parseObjectItems,
   parseSandboxInfo,
-  parseSnapshot,
   type SandboxConnection,
   type SandboxInfo,
   type SandboxLogEntry,
   type SandboxMetrics,
   SandboxState,
-  type SnapshotInfo,
   type VolumeMount,
 } from "./models.js";
 import { Pty } from "./pty.js";
@@ -53,18 +51,6 @@ export interface ListSandboxesOptions {
   states?: SandboxState[];
   limit?: number;
   nextToken?: string;
-}
-
-export interface ListSnapshotsOptions {
-  sandboxId?: string;
-  name?: string;
-  limit?: number;
-  nextToken?: string;
-}
-
-export interface SandboxForkResult {
-  sandbox?: Sandbox;
-  error?: ErrorDetail;
 }
 
 interface SandboxContext {
@@ -144,30 +130,6 @@ export class Sandboxes {
     return Object.fromEntries(
       Object.entries(values).map(([id, value]) => [id, parseMetrics(objectValue(value))]),
     );
-  }
-}
-
-export class Snapshots {
-  readonly #transport: Transport;
-
-  constructor(transport: Transport) {
-    this.#transport = transport;
-  }
-
-  async list(options: ListSnapshotsOptions = {}): Promise<Page<SnapshotInfo>> {
-    const params = {
-      sandboxID: options.sandboxId,
-      name: options.name,
-      limit: options.limit,
-      nextToken: options.nextToken,
-    };
-    const { body, headers } = await this.#transport.requestWithHeaders("GET", "/snapshots", {
-      params,
-    });
-    return {
-      items: parseObjectItems(body).map(parseSnapshot),
-      nextToken: headers.get("x-next-token") ?? undefined,
-    };
   }
 }
 
@@ -284,30 +246,6 @@ export class Sandbox {
     return true;
   }
 
-  async snapshot(name?: string): Promise<SnapshotInfo> {
-    return parseSnapshot(
-      objectValue(
-        await this.#control.request("POST", `/sandboxes/${identifier(this.sandboxId)}/snapshots`, {
-          json: name ? { name } : {},
-        }),
-      ),
-    );
-  }
-
-  async fork(options: { timeout?: number; count?: number } = {}): Promise<SandboxForkResult[]> {
-    const count = options.count ?? 1;
-    if (!Number.isInteger(count) || count < 1 || count > 100)
-      throw new RangeError("count must be between 1 and 100");
-    const payload = await this.#control.request(
-      "POST",
-      `/sandboxes/${identifier(this.sandboxId)}/fork`,
-      {
-        json: { timeout: checkedTimeout(options.timeout ?? 300), count },
-      },
-    );
-    return parseObjectItems(payload).map((item) => this.#forkResult(item));
-  }
-
   async getLogs(
     options: {
       cursor?: number;
@@ -395,23 +333,6 @@ export class Sandbox {
   async #closeGateway(): Promise<void> {
     if (this.#gateway) await this.#gateway.close();
     this.#gateway = undefined;
-  }
-
-  #forkResult(value: WireObject): SandboxForkResult {
-    let sandbox: Sandbox | undefined;
-    if (value.sandbox && typeof value.sandbox === "object") {
-      const [info, connection] = sandboxPayload(value.sandbox);
-      sandbox = new Sandbox(this.#control, info, connection, this.#context);
-    }
-    let error: ErrorDetail | undefined;
-    if (value.error && typeof value.error === "object") {
-      const detail = objectValue(value.error);
-      error = {
-        code: String(detail.error ?? detail.code ?? ""),
-        message: String(detail.message ?? ""),
-      };
-    }
-    return { sandbox, error };
   }
 }
 

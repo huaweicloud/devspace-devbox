@@ -67,12 +67,13 @@ try {
 
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
-| `Sandbox` | `create`、`connect`、`getInfo`、`setTimeout`、`refresh`、`kill` | 沙箱生命周期 |
-| `sandbox.commands` | `run`、`connect`、`list`、`sendStdin`、`sendSignal` | 命令与进程 |
+| `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
+| `Sandbox` | `create`、`connect`、`getInfo`、`isRunning`、`setTimeout`、`refresh`、`kill`、`close` | 沙箱生命周期 |
+| `sandbox.commands` | `run`、`connect`、`list`、`sendStdin`、`closeStdin`、`sendSignal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`makeDir`、`move`、`remove` | 远端文件 |
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输与目录监听 |
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
-| `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push` | Git 工作流 |
+| `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`setConfig` | Git 工作流 |
 
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
 `sandbox.files.makeDir()`，而不是 `sandbox.makeDir()`。
@@ -137,8 +138,6 @@ try {
   await client.close();
 }
 ```
-
-`client.templates`、`client.snapshots` 和 `client.nodes` 是管理面扩展资源。部署环境未开放对应接口时会返回 `NotFoundError`，不影响基础沙箱能力。
 
 ## 配置
 

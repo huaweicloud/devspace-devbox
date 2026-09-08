@@ -229,19 +229,6 @@ class SandboxMetrics:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class SnapshotInfo:
-    snapshot_id: str
-    names: tuple[str, ...]
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> SnapshotInfo:
-        return cls(
-            snapshot_id=str(_pick(value, "snapshotID", "snapshotId", "snapshot_id", "id")),
-            names=_string_tuple(value.get("names")),
-        )
-
-
 class LogLevel(str, Enum):
     ERROR = "ERROR"
     WARNING = "WARNING"
@@ -359,140 +346,20 @@ class FileInfo:
 
 
 @dataclass(frozen=True, slots=True)
-class TemplateInfo:
-    template_id: str
-    namespace: str
-    name: str | None = None
-    public: bool = False
-    created_by: str | None = None
-    spawn_count: int = 0
-    created_at: datetime | None = None
+class FileWatchEvent:
+    name: str
+    type: str
+    path: str | None = None
+    entry: FileInfo | None = None
 
     @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> TemplateInfo:
+    def from_wire(cls, value: Mapping[str, Any]) -> FileWatchEvent:
+        raw_entry = value.get("entry")
         return cls(
-            template_id=str(_pick(value, "template_id", "templateID", "templateId", "id")),
-            namespace=str(_pick(value, "namespace")),
-            name=_optional_str(value.get("name")),
-            public=bool(value.get("public", False)),
-            created_by=_optional_str(value.get("created_by")),
-            spawn_count=_integer(value.get("spawn_count", 0)),
-            created_at=parse_optional_datetime(value.get("created_at")),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateBuildInfo:
-    template_id: str
-    build_id: str
-    namespace: str | None = None
-    status: str | None = None
-    tag: str | None = None
-    vcpu: float | None = None
-    ram_mb: int | None = None
-    total_disk_mb: int | None = None
-    kernel_version: str | None = None
-    firecracker_version: str | None = None
-    reason: str | None = None
-    created_at: datetime | None = None
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> TemplateBuildInfo:
-        return cls(
-            template_id=str(_pick(value, "template_id", "templateID", "templateId")),
-            build_id=str(_pick(value, "build_id", "buildID", "buildId", "id")),
-            namespace=_optional_str(value.get("namespace")),
-            status=_optional_str(value.get("status")),
-            tag=_optional_str(value.get("tag")),
-            vcpu=_optional_number(value.get("vcpu")),
-            ram_mb=_optional_int(value.get("ram_mb")),
-            total_disk_mb=_optional_int(value.get("total_disk_mb")),
-            kernel_version=_optional_str(value.get("kernel_version")),
-            firecracker_version=_optional_str(value.get("firecracker_version")),
-            reason=_optional_str(value.get("reason")),
-            created_at=parse_optional_datetime(value.get("created_at")),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateDetail:
-    template: TemplateInfo
-    builds: tuple[TemplateBuildInfo, ...] = ()
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> TemplateDetail:
-        return cls(
-            template=TemplateInfo.from_wire(_required_mapping(value.get("template"))),
-            builds=tuple(
-                TemplateBuildInfo.from_wire(item) for item in _mapping_items(value.get("builds"))
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateAliasInfo:
-    alias: str
-    template_id: str
-    namespace: str
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> TemplateAliasInfo:
-        return cls(
-            alias=str(_pick(value, "alias")),
-            template_id=str(_pick(value, "template_id")),
-            namespace=str(_pick(value, "namespace")),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateFileInfo:
-    exists: bool
-    upload_url: str | None = field(default=None, repr=False)
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> TemplateFileInfo:
-        return cls(
-            exists=bool(value.get("exists", False)),
-            upload_url=_optional_str(value.get("upload_url")),
-        )
-
-
-class NodeStatus(str, Enum):
-    READY = "ready"
-    DRAINING = "draining"
-    OFFLINE = "offline"
-
-
-@dataclass(frozen=True, slots=True)
-class NodeInfo:
-    node_id: str
-    node_name: str | None = None
-    cluster_id: str | None = None
-    ip_address: str | None = None
-    cpu_total: float | None = None
-    cpu_free: float | None = None
-    ram_total_mb: int | None = None
-    ram_free_mb: int | None = None
-    disk_total_mb: int | None = None
-    disk_free_mb: int | None = None
-    current_sandbox_count: int | None = None
-    status: str | None = None
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> NodeInfo:
-        return cls(
-            node_id=str(_pick(value, "node_id")),
-            node_name=_optional_str(value.get("node_name")),
-            cluster_id=_optional_str(value.get("cluster_id")),
-            ip_address=_optional_str(value.get("ip_address")),
-            cpu_total=_optional_number(value.get("cpu_total")),
-            cpu_free=_optional_number(value.get("cpu_free")),
-            ram_total_mb=_optional_int(value.get("ram_total_mb")),
-            ram_free_mb=_optional_int(value.get("ram_free_mb")),
-            disk_total_mb=_optional_int(value.get("disk_total_mb")),
-            disk_free_mb=_optional_int(value.get("disk_free_mb")),
-            current_sandbox_count=_optional_int(value.get("current_sandbox_count")),
-            status=_optional_str(value.get("status")),
+            name=str(value.get("name", "")),
+            type=str(value.get("type", value.get("operation", ""))),
+            path=_optional_str(value.get("path")),
+            entry=FileInfo.from_wire(raw_entry) if isinstance(raw_entry, Mapping) else None,
         )
 
 
@@ -551,10 +418,6 @@ def _optional_int(value: object) -> int | None:
     return None if value is None else _integer(value)
 
 
-def _optional_number(value: object) -> float | None:
-    return None if value is None else _number(value)
-
-
 def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         return ()
@@ -565,12 +428,6 @@ def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
-
-
-def _required_mapping(value: object) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ProtocolError("DevBox response field is not an object")
-    return value
 
 
 def _rules_to_wire(

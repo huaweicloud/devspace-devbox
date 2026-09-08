@@ -101,7 +101,7 @@ def test_watch_reads_envd_top_level_event() -> None:
         event = next(events)
         events.close()
 
-    assert event["name"] == "created.txt"
+    assert event.name == "created.txt"
     assert stream.closed is True
 
 
@@ -138,7 +138,7 @@ async def test_async_watch_closes_transport_stream() -> None:
     finally:
         await transport.close()
 
-    assert event["name"] == "created.txt"
+    assert event.name == "created.txt"
     assert stream.closed is True
 
 

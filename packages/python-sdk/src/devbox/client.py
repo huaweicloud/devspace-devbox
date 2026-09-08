@@ -7,17 +7,13 @@ import httpx
 
 from ._transport import AsyncTransport, SyncTransport
 from .config import ConnectionConfig
-from .nodes import AsyncNodes, Nodes
-from .sandbox import AsyncSandboxes, AsyncSnapshots, Sandboxes, Snapshots
-from .templates import AsyncTemplates, Templates
+from .sandbox import AsyncSandboxes, Sandboxes
 
 
 class DevBox:
     """Reusable client for listing or operating multiple sandboxes.
 
-    Most applications can start with ``Sandbox.create()`` instead. The resource
-    groups exposed here are ``sandboxes``, ``snapshots``, ``templates``, and
-    ``nodes``.
+    Most applications can start with ``Sandbox.create()`` instead.
     """
 
     def __init__(
@@ -49,9 +45,6 @@ class DevBox:
             config.request_timeout,
             gateway_url=config.gateway_url,
         )
-        self.snapshots = Snapshots(self._transport)
-        self.templates = Templates(self._transport)
-        self.nodes = Nodes(self._transport)
 
     def close(self) -> None:
         self._transport.close()
@@ -100,9 +93,6 @@ class AsyncDevBox:
             config.request_timeout,
             gateway_url=config.gateway_url,
         )
-        self.snapshots = AsyncSnapshots(self._transport)
-        self.templates = AsyncTemplates(self._transport)
-        self.nodes = AsyncNodes(self._transport)
 
     async def close(self) -> None:
         await self._transport.close()

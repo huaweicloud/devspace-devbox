@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import TracebackType
 from typing import Any
@@ -11,7 +11,7 @@ from uuid import uuid4
 from ._transport import AsyncTransport, SyncTransport
 from .commands import AsyncCommands, Commands
 from .config import ConnectionConfig
-from .errors import DevBoxError, ErrorDetail, NotFoundError, ProtocolError
+from .errors import DevBoxError, NotFoundError, ProtocolError
 from .filesystem import AsyncFilesystem, Filesystem
 from .git import AsyncGit, Git
 from .models import (
@@ -24,7 +24,6 @@ from .models import (
     SandboxLogEntry,
     SandboxMetrics,
     SandboxState,
-    SnapshotInfo,
     VolumeMount,
 )
 from .pty import AsyncPty, Pty
@@ -230,42 +229,6 @@ class AsyncSandboxes:
         }
 
 
-class Snapshots:
-    def __init__(self, transport: SyncTransport) -> None:
-        self._transport = transport
-
-    def list(
-        self,
-        *,
-        sandbox_id: str | None = None,
-        name: str | None = None,
-        limit: int | None = None,
-        next_token: str | None = None,
-    ) -> Page[SnapshotInfo]:
-        payload, headers = self._transport.request_with_headers(
-            "GET", "/snapshots", params=_snapshot_params(sandbox_id, name, limit, next_token)
-        )
-        return _snapshot_page(payload, headers.get("X-Next-Token"))
-
-
-class AsyncSnapshots:
-    def __init__(self, transport: AsyncTransport) -> None:
-        self._transport = transport
-
-    async def list(
-        self,
-        *,
-        sandbox_id: str | None = None,
-        name: str | None = None,
-        limit: int | None = None,
-        next_token: str | None = None,
-    ) -> Page[SnapshotInfo]:
-        payload, headers = await self._transport.request_with_headers(
-            "GET", "/snapshots", params=_snapshot_params(sandbox_id, name, limit, next_token)
-        )
-        return _snapshot_page(payload, headers.get("X-Next-Token"))
-
-
 class Sandbox:
     """The main synchronous entry point for one remote sandbox.
 
@@ -446,32 +409,6 @@ class Sandbox:
             self._close_gateway()
         self._info = replace(self._info, state=SandboxState.STOPPED)
         return True
-
-    def snapshot(self, name: str | None = None) -> SnapshotInfo:
-        """Create a snapshot from the current sandbox."""
-        payload = self._control.request(
-            "POST",
-            f"/sandboxes/{_id(self.sandbox_id)}/snapshots",
-            json_body={"name": name} if name else {},
-        )
-        return SnapshotInfo.from_wire(_mapping(payload))
-
-    def fork(self, *, timeout: int = 300, count: int = 1) -> tuple[SandboxForkResult, ...]:
-        """Create one or more sandboxes from the current sandbox state."""
-        payload = self._control.request(
-            "POST",
-            f"/sandboxes/{_id(self.sandbox_id)}/fork",
-            json_body=_fork_body(timeout, count),
-        )
-        return tuple(
-            _fork_result(
-                item,
-                self._control,
-                self._request_timeout,
-                self._gateway_url_override,
-            )
-            for item in _items(payload)
-        )
 
     def get_logs(
         self,
@@ -721,32 +658,6 @@ class AsyncSandbox:
         self._info = replace(self._info, state=SandboxState.STOPPED)
         return True
 
-    async def snapshot(self, name: str | None = None) -> SnapshotInfo:
-        payload = await self._control.request(
-            "POST",
-            f"/sandboxes/{_id(self.sandbox_id)}/snapshots",
-            json_body={"name": name} if name else {},
-        )
-        return SnapshotInfo.from_wire(_mapping(payload))
-
-    async def fork(
-        self, *, timeout: int = 300, count: int = 1
-    ) -> tuple[AsyncSandboxForkResult, ...]:
-        payload = await self._control.request(
-            "POST",
-            f"/sandboxes/{_id(self.sandbox_id)}/fork",
-            json_body=_fork_body(timeout, count),
-        )
-        return tuple(
-            _async_fork_result(
-                item,
-                self._control,
-                self._request_timeout,
-                self._gateway_url_override,
-            )
-            for item in _items(payload)
-        )
-
     async def get_logs(
         self,
         *,
@@ -820,18 +731,6 @@ class AsyncSandbox:
         if self._gateway is not None:
             await self._gateway.close()
             self._gateway = None
-
-
-@dataclass(frozen=True, slots=True)
-class SandboxForkResult:
-    sandbox: Sandbox | None
-    error: ErrorDetail | None
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncSandboxForkResult:
-    sandbox: AsyncSandbox | None
-    error: ErrorDetail | None
 
 
 def _sync_control(
@@ -923,10 +822,6 @@ def _sandbox_page(value: object, next_token: str | None, total: str | None) -> P
     )
 
 
-def _snapshot_page(value: object, next_token: str | None) -> Page[SnapshotInfo]:
-    return Page(tuple(SnapshotInfo.from_wire(item) for item in _items(value)), next_token or None)
-
-
 def _list_params(
     metadata: str | None,
     states: Sequence[SandboxState | str],
@@ -946,18 +841,6 @@ def _list_params(
         params["limit"] = limit
     if next_token:
         params["nextToken"] = next_token
-    return params
-
-
-def _snapshot_params(
-    sandbox_id: str | None, name: str | None, limit: int | None, next_token: str | None
-) -> dict[str, str | int]:
-    params: dict[str, str | int] = {}
-    for key, value in (("sandboxID", sandbox_id), ("name", name), ("nextToken", next_token)):
-        if value:
-            params[key] = value
-    if limit is not None:
-        params["limit"] = limit
     return params
 
 
@@ -998,58 +881,6 @@ def _metric_timestamp(value: int | datetime) -> int:
         return value
     timestamp = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     return int(timestamp.timestamp())
-
-
-def _fork_body(timeout: int, count: int) -> dict[str, int]:
-    if not 1 <= count <= 100:
-        raise ValueError("count must be between 1 and 100")
-    return {"timeout": _checked_timeout(timeout), "count": count}
-
-
-def _fork_result(
-    value: Mapping[str, Any],
-    control: SyncTransport,
-    request_timeout: float,
-    gateway_url: str | None = None,
-) -> SandboxForkResult:
-    raw = value.get("sandbox")
-    sandbox = None
-    if isinstance(raw, Mapping):
-        info, connection = _sandbox_payload(raw)
-        sandbox = Sandbox(
-            control,
-            info,
-            connection,
-            request_timeout=request_timeout,
-            gateway_url=gateway_url,
-        )
-    return SandboxForkResult(sandbox, _error_detail(value.get("error")))
-
-
-def _async_fork_result(
-    value: Mapping[str, Any],
-    control: AsyncTransport,
-    request_timeout: float,
-    gateway_url: str | None = None,
-) -> AsyncSandboxForkResult:
-    raw = value.get("sandbox")
-    sandbox = None
-    if isinstance(raw, Mapping):
-        info, connection = _sandbox_payload(raw)
-        sandbox = AsyncSandbox(
-            control,
-            info,
-            connection,
-            request_timeout=request_timeout,
-            gateway_url=gateway_url,
-        )
-    return AsyncSandboxForkResult(sandbox, _error_detail(value.get("error")))
-
-
-def _error_detail(value: object) -> ErrorDetail | None:
-    if not isinstance(value, Mapping):
-        return None
-    return ErrorDetail(str(value.get("error", "")), str(value.get("message", "")))
 
 
 def _sandbox_ids(values: Sequence[str]) -> tuple[str, ...]:

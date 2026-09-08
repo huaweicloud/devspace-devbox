@@ -109,7 +109,7 @@ export class Transport {
     } = {},
   ) {
     this.#baseUrl = baseUrl.replace(/\/$/, "");
-    this.#headers = { "User-Agent": `devbox-js/${VERSION}`, ...options.headers };
+    this.#headers = { "User-Agent": `devbox-js-sdk/${VERSION}`, ...options.headers };
     this.#timeoutMs = options.timeoutMs ?? 30_000;
     this.#dispatcher =
       options.dispatcher ??
@@ -417,9 +417,7 @@ function isAbort(error: unknown): boolean {
 function isConnectionError(error: unknown): boolean {
   if (!(error instanceof TypeError)) return false;
   const cause = error.cause as NodeJS.ErrnoException | undefined;
-  return ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT"].includes(
-    cause?.code ?? "",
-  );
+  return ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(cause?.code ?? "");
 }
 
 function concat(left: Uint8Array, right: Uint8Array): Uint8Array {

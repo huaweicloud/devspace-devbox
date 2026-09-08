@@ -173,6 +173,7 @@ export class Commands {
     });
   }
 
+  /** @internal */
   async start(
     body: WireObject,
     options: {
@@ -208,6 +209,7 @@ export class Commands {
     }
   }
 
+  /** @internal */
   async connectEvents(pid: number, timeoutMs: number | null): Promise<EventSource> {
     const stream = (await this.#transport()).connectStream(
       `${PROCESS}/Connect`,
@@ -227,6 +229,7 @@ export class Commands {
     }
   }
 
+  /** @internal */
   async sendInput(pid: number, data: string | Uint8Array, stream: "stdin" | "pty"): Promise<void> {
     validatePid(pid);
     const bytes = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);

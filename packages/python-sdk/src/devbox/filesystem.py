@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from ._transport import AsyncTransport, SyncTransport
 from .errors import NotFoundError, ProtocolError
-from .models import FileInfo
+from .models import FileInfo, FileWatchEvent
 
 SyncTransportProvider = Callable[[], SyncTransport]
 AsyncTransportProvider = Callable[[], Awaitable[AsyncTransport]]
@@ -105,7 +105,7 @@ class Filesystem:
         *,
         recursive: bool = False,
         include_entry: bool = True,
-    ) -> Generator[Mapping[str, Any], None, None]:
+    ) -> Generator[FileWatchEvent, None, None]:
         """Yield filesystem changes until the returned generator is closed."""
         events = self._transport().connect_stream(
             f"{_FILESYSTEM}/WatchDir",
@@ -211,7 +211,7 @@ class AsyncFilesystem:
         *,
         recursive: bool = False,
         include_entry: bool = True,
-    ) -> AsyncGenerator[Mapping[str, Any], None]:
+    ) -> AsyncGenerator[FileWatchEvent, None]:
         transport = await self._transport()
         events = transport.connect_stream(
             f"{_FILESYSTEM}/WatchDir",
@@ -233,19 +233,19 @@ class AsyncFilesystem:
 
 def _filesystem_events(
     responses: Generator[Mapping[str, Any], None, None],
-) -> Generator[Mapping[str, Any], None, None]:
+) -> Generator[FileWatchEvent, None, None]:
     for response in responses:
         event = _filesystem_event(response)
         if event is not None:
             yield event
 
 
-def _filesystem_event(response: Mapping[str, Any]) -> Mapping[str, Any] | None:
+def _filesystem_event(response: Mapping[str, Any]) -> FileWatchEvent | None:
     value = response.get("filesystem")
     if value is None:
         event = response.get("event")
         value = event.get("filesystem") if isinstance(event, Mapping) else None
-    return value if isinstance(value, Mapping) else None
+    return FileWatchEvent.from_wire(value) if isinstance(value, Mapping) else None
 
 
 def _path(value: str) -> str:
