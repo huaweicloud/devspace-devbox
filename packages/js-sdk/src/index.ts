@@ -21,6 +21,7 @@ export {
   ServiceUnavailableError,
   ValidationError,
 } from "./errors.js";
+export type { ListFilesOptions, WriteFileOptions } from "./filesystem.js";
 export type { GitCredentials, GitNetworkOptions } from "./git.js";
 export {
   type CommandResult,
@@ -43,6 +44,7 @@ export {
 } from "./models.js";
 export type { PtyStartOptions } from "./pty.js";
 export {
+  type ConnectSandboxOptions,
   type CreateSandboxOptions,
   type ListSandboxesOptions,
   Sandbox,

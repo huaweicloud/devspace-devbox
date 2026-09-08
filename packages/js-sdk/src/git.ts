@@ -48,7 +48,7 @@ export class Git {
     );
   }
 
-  add(repository: string, paths: string | string[] = "."): Promise<CommandResult> {
+  add(repository: string, paths: string | readonly string[] = "."): Promise<CommandResult> {
     const values = typeof paths === "string" ? [paths] : paths;
     if (values.length === 0) throw new TypeError("at least one git path is required");
     return this.#run(inRepository(repository, "add", "--", ...values));

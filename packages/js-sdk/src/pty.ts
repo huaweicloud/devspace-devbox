@@ -36,7 +36,7 @@ export class Pty {
 
   async connect(pid: number, options: { timeoutMs?: number | null } = {}): Promise<CommandHandle> {
     const timeoutMs = options.timeoutMs ?? null;
-    return new CommandHandle(
+    return CommandHandle.fromProcess(
       pid,
       this.#commands,
       await this.#commands.connectEvents(pid, timeoutMs),

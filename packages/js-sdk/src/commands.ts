@@ -45,7 +45,7 @@ export class CommandHandle {
   #events?: EventSource;
   #result?: CommandResult;
 
-  constructor(
+  private constructor(
     pid: number,
     commands: Commands,
     events?: EventSource,
@@ -57,6 +57,17 @@ export class CommandHandle {
     this.#events = events;
     this.#inputStream = inputStream;
     this.#reconnectTimeoutMs = reconnectTimeoutMs;
+  }
+
+  /** @internal */
+  static fromProcess(
+    pid: number,
+    commands: Commands,
+    events?: EventSource,
+    inputStream: "stdin" | "pty" = "stdin",
+    reconnectTimeoutMs: number | null = 60_000,
+  ): CommandHandle {
+    return new CommandHandle(pid, commands, events, inputStream, reconnectTimeoutMs);
   }
 
   async wait(options: WaitOptions = {}): Promise<CommandResult> {
@@ -138,7 +149,7 @@ export class Commands {
   async connect(pid: number, options: { timeoutMs?: number | null } = {}): Promise<CommandHandle> {
     validatePid(pid);
     const timeoutMs = options.timeoutMs === undefined ? 60_000 : options.timeoutMs;
-    return new CommandHandle(
+    return CommandHandle.fromProcess(
       pid,
       this,
       await this.connectEvents(pid, timeoutMs),
@@ -202,7 +213,7 @@ export class Commands {
     const events = eventSource(stream);
     try {
       const pid = await firstPid(events.iterator, "start process");
-      return new CommandHandle(pid, this, events, options.inputStream, options.timeoutMs);
+      return CommandHandle.fromProcess(pid, this, events, options.inputStream, options.timeoutMs);
     } catch (error) {
       events.close();
       throw error;

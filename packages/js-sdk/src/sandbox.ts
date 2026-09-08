@@ -36,19 +36,23 @@ import { Pty } from "./pty.js";
 
 export interface CreateSandboxOptions {
   timeout?: number;
-  envs?: Record<string, string>;
-  metadata?: Record<string, string>;
+  envs?: Readonly<Record<string, string>>;
+  metadata?: Readonly<Record<string, string>>;
   network?: NetworkConfig;
   secure?: boolean;
   clientId?: string;
   buildId?: string;
-  volumeMounts?: VolumeMount[];
+  volumeMounts?: readonly VolumeMount[];
   idempotencyKey?: string;
+}
+
+export interface ConnectSandboxOptions {
+  timeout?: number;
 }
 
 export interface ListSandboxesOptions {
   metadata?: string;
-  states?: SandboxState[];
+  states?: readonly SandboxState[];
   limit?: number;
   nextToken?: string;
 }
@@ -75,19 +79,19 @@ export class Sandboxes {
       headers: { "Idempotency-Key": options.idempotencyKey ?? randomUUID() },
     });
     const [info, connection] = sandboxPayload(payload);
-    return new Sandbox(this.#transport, info, connection, this.#context);
+    return Sandbox.fromConnection(this.#transport, info, connection, this.#context);
   }
 
-  async connect(sandboxId: string, timeout = 300): Promise<Sandbox> {
+  async connect(sandboxId: string, options: ConnectSandboxOptions = {}): Promise<Sandbox> {
     const payload = await this.#transport.request(
       "POST",
       `/sandboxes/${identifier(sandboxId)}/connect`,
       {
-        json: { timeout: checkedTimeout(timeout) },
+        json: { timeout: checkedTimeout(options.timeout ?? 300) },
       },
     );
     const [info, connection] = sandboxPayload(payload);
-    return new Sandbox(this.#transport, info, connection, this.#context);
+    return Sandbox.fromConnection(this.#transport, info, connection, this.#context);
   }
 
   async get(sandboxId: string): Promise<SandboxInfo> {
@@ -117,7 +121,7 @@ export class Sandboxes {
     };
   }
 
-  async metrics(sandboxIds: string[]): Promise<Record<string, SandboxMetrics>> {
+  async metrics(sandboxIds: readonly string[]): Promise<Record<string, SandboxMetrics>> {
     const ids = [...new Set(sandboxIds.filter(Boolean))];
     if (ids.length < 1 || ids.length > 100)
       throw new RangeError("sandboxIds must contain between 1 and 100 unique IDs");
@@ -144,7 +148,7 @@ export class Sandbox {
   #connection: SandboxConnection;
   #gateway?: Transport;
 
-  constructor(
+  private constructor(
     control: Transport,
     info: SandboxInfo,
     connection: SandboxConnection,
@@ -158,6 +162,16 @@ export class Sandbox {
     this.files = new Filesystem(() => this.#gatewayTransport());
     this.pty = new Pty(this.commands, () => this.#gatewayTransport());
     this.git = new Git(this.commands);
+  }
+
+  /** @internal */
+  static fromConnection(
+    control: Transport,
+    info: SandboxInfo,
+    connection: SandboxConnection,
+    context: SandboxContext,
+  ): Sandbox {
+    return new Sandbox(control, info, connection, context);
   }
 
   static async create(
@@ -180,15 +194,14 @@ export class Sandbox {
 
   static async connect(
     sandboxId: string,
-    options: DevBoxOptions & { timeout?: number } = {},
+    options: DevBoxOptions & ConnectSandboxOptions = {},
   ): Promise<Sandbox> {
     const config = resolveConfig(options);
     const transport = controlTransport(config);
     try {
-      return await new Sandboxes(transport, contextFrom(config, true)).connect(
-        sandboxId,
-        options.timeout ?? 300,
-      );
+      return await new Sandboxes(transport, contextFrom(config, true)).connect(sandboxId, {
+        timeout: options.timeout,
+      });
     } catch (error) {
       await transport.close();
       throw error;

@@ -68,7 +68,7 @@ class NetworkConfig:
             return cls(allow_internet_access=allow_internet_access)
         return cls(
             allow_internet_access=allow_internet_access,
-            allow_public_traffic=bool(value.get("allowPublicTraffic", True)),
+            allow_public_traffic=bool(value.get("allowPublicTraffic", False)),
             allow_out=_string_tuple(value.get("allowOut")),
             deny_out=_string_tuple(value.get("denyOut")),
             mask_request_host=_optional_str(value.get("maskRequestHost")),
@@ -152,14 +152,6 @@ class SandboxInfo:
                 VolumeMount.from_wire(item) for item in _mapping_items(value.get("volumeMounts"))
             ),
         )
-
-    @property
-    def created_at(self) -> datetime | None:
-        return self.started_at
-
-    @property
-    def expires_at(self) -> datetime | None:
-        return self.end_at
 
 
 @dataclass(frozen=True, slots=True)

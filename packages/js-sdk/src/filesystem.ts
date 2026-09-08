@@ -7,6 +7,14 @@ import { type FileInfo, type FileWatchEvent, parseFileInfo } from "./models.js";
 const FILESYSTEM = "/filesystem.Filesystem";
 type TransportProvider = () => Promise<Transport>;
 
+export interface WriteFileOptions {
+  encoding?: BufferEncoding;
+}
+
+export interface ListFilesOptions {
+  depth?: number;
+}
+
 export class Filesystem {
   readonly #transport: TransportProvider;
 
@@ -27,9 +35,9 @@ export class Filesystem {
   async write(
     path: string,
     data: string | Uint8Array,
-    encoding: BufferEncoding = "utf8",
+    options: WriteFileOptions = {},
   ): Promise<FileInfo> {
-    const body = typeof data === "string" ? Buffer.from(data, encoding) : data;
+    const body = typeof data === "string" ? Buffer.from(data, options.encoding ?? "utf8") : data;
     const payload = await (await this.#transport()).request("POST", "/files", {
       body,
       params: { path: sandboxPath(path) },
@@ -39,16 +47,17 @@ export class Filesystem {
   }
 
   async writeBatch(
-    files: Record<string, string | Uint8Array>,
-    encoding: BufferEncoding = "utf8",
+    files: Readonly<Record<string, string | Uint8Array>>,
+    options: WriteFileOptions = {},
   ): Promise<FileInfo[]> {
     const result: FileInfo[] = [];
     for (const [path, data] of Object.entries(files))
-      result.push(await this.write(path, data, encoding));
+      result.push(await this.write(path, data, options));
     return result;
   }
 
-  async list(path: string, depth = 1): Promise<FileInfo[]> {
+  async list(path: string, options: ListFilesOptions = {}): Promise<FileInfo[]> {
+    const depth = options.depth ?? 1;
     if (!Number.isInteger(depth) || depth < 1)
       throw new RangeError("depth must be a positive integer");
     const payload = await (await this.#transport()).connectUnary(`${FILESYSTEM}/ListDir`, {

@@ -75,6 +75,9 @@ try {
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`setConfig` | Git 工作流 |
 
+沙箱生命周期的 `timeout`、`duration` 以秒为单位；命令、Git 和请求配置中的
+`timeoutMs`、`requestTimeoutMs` 以毫秒为单位。
+
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
 `sandbox.files.makeDir()`，而不是 `sandbox.makeDir()`。
 

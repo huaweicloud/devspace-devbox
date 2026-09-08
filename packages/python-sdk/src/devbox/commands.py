@@ -70,7 +70,7 @@ class CommandHandle:
         self._ensure_active()
         self._commands.close_stdin(self.pid)
 
-    def send_signal(self, signal: str) -> None:
+    def send_signal(self, signal: Literal["SIGTERM", "SIGKILL"]) -> None:
         """Send a POSIX signal such as ``SIGTERM`` to the process."""
         self._ensure_active()
         self._commands.send_signal(self.pid, signal)
@@ -174,7 +174,7 @@ class Commands:
         _validate_pid(pid)
         self._transport().connect_unary(f"{_PROCESS}/CloseStdin", {"process": {"pid": pid}})
 
-    def send_signal(self, pid: int, signal: str) -> None:
+    def send_signal(self, pid: int, signal: Literal["SIGTERM", "SIGKILL"]) -> None:
         """Send a POSIX signal to a process by process ID."""
         _validate_pid(pid)
         self._transport().connect_unary(
@@ -303,7 +303,7 @@ class AsyncCommandHandle:
         self._ensure_active()
         await self._commands.close_stdin(self.pid)
 
-    async def send_signal(self, signal: str) -> None:
+    async def send_signal(self, signal: Literal["SIGTERM", "SIGKILL"]) -> None:
         self._ensure_active()
         await self._commands.send_signal(self.pid, signal)
 
@@ -404,7 +404,7 @@ class AsyncCommands:
         transport = await self._transport()
         await transport.connect_unary(f"{_PROCESS}/CloseStdin", {"process": {"pid": pid}})
 
-    async def send_signal(self, pid: int, signal: str) -> None:
+    async def send_signal(self, pid: int, signal: Literal["SIGTERM", "SIGKILL"]) -> None:
         _validate_pid(pid)
         transport = await self._transport()
         await transport.connect_unary(
@@ -624,12 +624,9 @@ def _items(payload: object, key: str) -> tuple[Mapping[str, Any], ...]:
 
 
 def _signal(value: str) -> str:
-    normalized = value.upper()
-    if normalized in {"SIGNAL_SIGTERM", "SIGNAL_SIGKILL"}:
-        return normalized
-    if normalized in {"SIGTERM", "SIGKILL"}:
-        return f"SIGNAL_{normalized}"
-    raise ValueError("signal must be SIGTERM or SIGKILL")
+    if value not in {"SIGTERM", "SIGKILL"}:
+        raise ValueError("signal must be SIGTERM or SIGKILL")
+    return f"SIGNAL_{value}"
 
 
 def _bytes(value: str | bytes) -> bytes:

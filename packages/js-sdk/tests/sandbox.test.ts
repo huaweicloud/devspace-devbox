@@ -66,6 +66,25 @@ describe("sandboxes", () => {
     await client.close();
   });
 
+  it("connects to a sandbox with explicit options", async () => {
+    agent = mockAgent();
+    const pool = agent.get("https://manager.example.test");
+    pool.intercept({ path: "/sandboxes/sbx-1/connect", method: "POST" }).reply(({ body }) => {
+      expect(JSON.parse(String(body))).toEqual({ timeout: 600 });
+      return { statusCode: 200, data: sandboxResponse };
+    });
+
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.connect("sbx-1", { timeout: 600 });
+
+    expect(sandbox.sandboxId).toBe("sbx-1");
+    await client.close();
+  });
+
   it("parses pagination headers", async () => {
     agent = mockAgent();
     agent

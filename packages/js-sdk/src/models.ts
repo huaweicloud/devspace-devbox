@@ -215,7 +215,7 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
     metadata: stringRecord(value.metadata),
     network: {
       allowInternetAccess: Boolean(value.allowInternetAccess ?? true),
-      allowPublicTraffic: Boolean(network.allowPublicTraffic ?? true),
+      allowPublicTraffic: Boolean(network.allowPublicTraffic ?? false),
       allowOut: stringArray(network.allowOut),
       denyOut: stringArray(network.denyOut),
       maskRequestHost: optionalString(network.maskRequestHost),

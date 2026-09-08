@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable, Generator, Iterator, Mapping
-from typing import Any
+from typing import Any, Literal, cast
 
 import httpx
 import pytest
@@ -187,7 +187,8 @@ def test_rejects_unknown_signal() -> None:
         _transport(lambda request: httpx.Response(200, json={})) as transport,
         pytest.raises(ValueError, match="SIGTERM or SIGKILL"),
     ):
-        Commands(lambda: transport).send_signal(42, "SIGNAL_UNKNOWN")
+        invalid = cast(Literal["SIGTERM", "SIGKILL"], "SIGNAL_UNKNOWN")
+        Commands(lambda: transport).send_signal(42, invalid)
 
 
 @pytest.mark.asyncio

@@ -84,6 +84,8 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
 
+沙箱生命周期、命令和 Git 操作中的 `timeout`、`duration` 均以秒为单位。
+
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
 `sandbox.files.make_dir()`，而不是 `sandbox.make_dir()`。
 
