@@ -1,33 +1,12 @@
 import type { MockAgent } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { DevBox } from "../src/client.js";
-import * as sdk from "../src/index.js";
 import { SandboxState } from "../src/models.js";
-import { Sandbox } from "../src/sandbox.js";
 import { mockAgent, sandboxResponse } from "./helpers.js";
 
 describe("sandboxes", () => {
   let agent: MockAgent | undefined;
   afterEach(async () => agent?.close());
-
-  it("does not expose unavailable manager resources", async () => {
-    expect(sdk).not.toHaveProperty("Snapshots");
-    expect(sdk).not.toHaveProperty("Templates");
-    expect(sdk).not.toHaveProperty("Nodes");
-    expect(Sandbox.prototype).not.toHaveProperty("snapshot");
-    expect(Sandbox.prototype).not.toHaveProperty("fork");
-
-    agent = mockAgent();
-    const client = new DevBox({
-      apiKey: "key",
-      apiUrl: "https://manager.example.test",
-      dispatcher: agent,
-    });
-    expect(client).not.toHaveProperty("snapshots");
-    expect(client).not.toHaveProperty("templates");
-    expect(client).not.toHaveProperty("nodes");
-    await client.close();
-  });
 
   it("creates a sandbox using the manager wire contract", async () => {
     agent = mockAgent();

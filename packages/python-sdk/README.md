@@ -205,12 +205,9 @@ except DevBoxError as error:
 | --- | --- |
 | `examples/basic.py` | 推荐的同步入门路径 |
 | `examples/async_basic.py` | 异步入门路径 |
-| `examples/list_sandboxes.py` | 查询已有沙箱 |
 | `examples/validate_full.py` | 创建临时沙箱并执行完整验收 |
 
-全量验收覆盖生命周期、命令、进程重连、文件传输与监听、PTY 和本地 Git 工作流。无论
-验证是否成功，脚本都会尝试删除测试沙箱。数据面入口不可用时只报告一个根因，避免产生
-连续的误导性失败。
+全量验收覆盖生命周期、命令、文件传输、PTY 和本地 Git 工作流，并在结束时删除测试沙箱。
 
 ```bash
 python examples/validate_full.py

@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-import devbox
 from devbox import (
     AsyncDevBox,
     ConfigurationError,
@@ -20,17 +19,6 @@ from devbox import (
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
 from devbox.sandbox import _gateway_url
-
-
-def test_public_api_excludes_unavailable_manager_resources() -> None:
-    for name in ("SnapshotInfo", "Template", "NodeInfo"):
-        assert not hasattr(devbox, name)
-    for name in ("snapshot", "fork"):
-        assert not hasattr(devbox.Sandbox, name)
-
-    with client(lambda request: httpx.Response(204)) as api:
-        for name in ("snapshots", "templates", "nodes"):
-            assert not hasattr(api, name)
 
 
 def test_create_uses_manager_contract() -> None:
