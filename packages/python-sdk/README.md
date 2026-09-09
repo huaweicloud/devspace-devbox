@@ -205,9 +205,16 @@ except DevBoxError as error:
 | --- | --- |
 | `examples/basic.py` | 推荐的同步入门路径 |
 | `examples/async_basic.py` | 异步入门路径 |
+| `examples/demo.py` | 无交互的核心能力演示 |
 | `examples/validate_full.py` | 创建临时沙箱并执行完整验收 |
 
-全量验收覆盖生命周期、命令、文件传输、PTY 和本地 Git 工作流，并在结束时删除测试沙箱。
+核心能力演示：
+
+```bash
+python examples/demo.py
+```
+
+全量验收覆盖生命周期、命令、文件传输、PTY 和本地 Git 工作流，并在结束时删除测试沙箱：
 
 ```bash
 python examples/validate_full.py
