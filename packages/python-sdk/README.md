@@ -182,7 +182,7 @@ asyncio.run(main())
 数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Tunnel Token。
 
 Manager 未直接返回数据面地址的部署可以配置 URL 模板，例如
-`https://{port}-{tunnel_id}.cn-north-4-bridge.myhuaweicloud.com`。
+`https://{tunnel_id}-{port}.cn-north-4-bridge.myhuaweicloud.com`。
 
 SDK 仅重试连接建立失败，不自动重试限流、服务端错误或可能已经到达服务端的写操作。
 

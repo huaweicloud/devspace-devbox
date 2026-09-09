@@ -215,7 +215,7 @@ def test_https_gateway_url_can_override_manager_placeholder(
 ) -> None:
     monkeypatch.setenv(
         "DEVBOX_GATEWAY_URL",
-        "https://{port}-{tunnel_id}.gateway.example.test/",
+        "https://{tunnel_id}-{port}.gateway.example.test/",
     )
     config = ConnectionConfig.resolve(api_key="secret")
     connection = SandboxConnection(
@@ -225,7 +225,7 @@ def test_https_gateway_url_can_override_manager_placeholder(
         tunnel_id="aaaadysa",
     )
 
-    assert _gateway_url(connection, config.gateway_url) == "https://49983-aaaadysa.gateway.example.test"
+    assert _gateway_url(connection, config.gateway_url) == "https://aaaadysa-49983.gateway.example.test"
 
 
 def test_gateway_url_override_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
