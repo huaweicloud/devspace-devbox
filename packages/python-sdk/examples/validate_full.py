@@ -107,7 +107,7 @@ def validate_pty(sandbox: Sandbox, validator: Validator) -> None:
     def interaction() -> None:
         session = sandbox.pty.start(size=PtySize(rows=24, cols=80))
         sandbox.pty.resize(session.pid, PtySize(rows=30, cols=100))
-        session.send_stdin("printf pty-ok\\nexit\\n")
+        session.send_stdin("printf pty-ok\nexit\n")
         result = session.wait(check=False)
         _equal(result.exit_code, 0)
         _contains(result.stdout, "pty-ok")
