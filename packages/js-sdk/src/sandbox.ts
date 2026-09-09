@@ -303,7 +303,7 @@ export class Sandbox {
 
   async #gatewayTransport(): Promise<Transport> {
     if (!this.#gateway) {
-      const url = this.#context.gatewayUrl ?? this.#connection.domain;
+      const url = gatewayUrl(this.#connection, this.#context.gatewayUrl);
       if (!url) throw new ProtocolError("sandbox response does not provide an EnvD endpoint");
       if (url.replace(/^https:\/\//, "").endsWith(".sandbox.devbox.local")) {
         throw new ProtocolError("Manager returned a placeholder EnvD endpoint");
@@ -312,6 +312,7 @@ export class Sandbox {
         headers: {
           "X-Access-Token": this.#connection.envdAccessToken,
           "E2B-Sandbox-Id": this.sandboxId,
+          "E2B-Sandbox-Port": "49983",
         },
         timeoutMs: this.#context.requestTimeoutMs,
         dispatcher: this.#context.dispatcher,
@@ -324,6 +325,13 @@ export class Sandbox {
     if (this.#gateway) await this.#gateway.close();
     this.#gateway = undefined;
   }
+}
+
+function gatewayUrl(connection: SandboxConnection, configuredUrl?: string): string {
+  if (!configuredUrl) return connection.domain;
+  if (configuredUrl.includes("{tunnel_id}") && !connection.tunnelId)
+    throw new ProtocolError("sandbox response does not provide a tunnel ID");
+  return configuredUrl.replaceAll("{tunnel_id}", connection.tunnelId).replaceAll("{port}", "49983");
 }
 
 function createBody(template: string, options: CreateSandboxOptions): WireObject {

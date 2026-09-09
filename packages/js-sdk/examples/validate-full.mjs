@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DevBox } from "../dist/index.js";
+import { DevBox, ServiceUnavailableError } from "../dist/index.js";
 
 class Validator {
   failures = [];
@@ -74,15 +74,25 @@ async function validateSandbox(client, sandbox, validator) {
   await validator.verify("manager.refresh", () => sandbox.refresh(300));
   await validator.verify("manager.metrics", () => sandbox.getMetrics());
   await validator.verify("manager.logs", () => sandbox.getLogs({ limit: 20 }));
-  const runtime = await validator.verify("runtime.ready", async () => {
-    const result = await sandbox.commands.run("printf runtime-ready");
-    equal(result.stdout, "runtime-ready");
-    return true;
-  });
+  const runtime = await validator.verify("runtime.ready", () => waitForRuntime(sandbox));
   if (!runtime) {
     console.log("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable");
   } else {
     await validateRuntime(sandbox, validator);
+  }
+}
+
+async function waitForRuntime(sandbox) {
+  const deadline = performance.now() + 30_000;
+  while (true) {
+    try {
+      const result = await sandbox.commands.run("printf runtime-ready");
+      equal(result.stdout, "runtime-ready");
+      return true;
+    } catch (error) {
+      if (!(error instanceof ServiceUnavailableError) || performance.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
   }
 }
 

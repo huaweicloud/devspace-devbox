@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
 
-from devbox import CommandResult, DevBox, PtySize, Sandbox
+from devbox import CommandResult, DevBox, PtySize, Sandbox, ServiceUnavailableError
 
 T = TypeVar("T")
 
@@ -137,9 +137,16 @@ def _validate_list(client: DevBox, sandbox: Sandbox) -> None:
 
 
 def _validate_runtime(sandbox: Sandbox) -> bool:
-    result = sandbox.commands.run("printf runtime-ready")
-    _expect_result(result, stdout="runtime-ready")
-    return True
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            result = sandbox.commands.run("printf runtime-ready")
+            _expect_result(result, stdout="runtime-ready")
+            return True
+        except ServiceUnavailableError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(1)
 
 
 def _foreground_command(sandbox: Sandbox) -> None:

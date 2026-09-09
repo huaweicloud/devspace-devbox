@@ -869,12 +869,17 @@ def _gateway_headers(connection: SandboxConnection) -> dict[str, str]:
     return {
         "X-Access-Token": connection.envd_access_token,
         "E2B-Sandbox-Id": connection.sandbox_id,
+        "E2B-Sandbox-Port": "49983",
     }
 
 
 def _gateway_url(connection: SandboxConnection, configured_url: str | None = None) -> str:
     if configured_url:
-        return configured_url
+        if "{tunnel_id}" in configured_url and not connection.tunnel_id:
+            raise ProtocolError("sandbox response does not provide a tunnel ID")
+        return configured_url.replace("{tunnel_id}", connection.tunnel_id).replace(
+            "{port}", "49983"
+        )
     url = connection.domain
     if not url:
         raise ProtocolError("sandbox response does not provide an EnvD endpoint")

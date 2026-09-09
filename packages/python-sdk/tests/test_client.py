@@ -213,15 +213,19 @@ def test_invalid_pagination_header_is_a_protocol_error() -> None:
 def test_https_gateway_url_can_override_manager_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DEVBOX_GATEWAY_URL", "https://gateway.example.test/")
+    monkeypatch.setenv(
+        "DEVBOX_GATEWAY_URL",
+        "https://{port}-{tunnel_id}.gateway.example.test/",
+    )
     config = ConnectionConfig.resolve(api_key="secret")
     connection = SandboxConnection(
         sandbox_id="sbx_123",
         domain="https://sbx_123.sandbox.devbox.local",
         envd_access_token="token",
+        tunnel_id="aaaadysa",
     )
 
-    assert _gateway_url(connection, config.gateway_url) == "https://gateway.example.test"
+    assert _gateway_url(connection, config.gateway_url) == "https://49983-aaaadysa.gateway.example.test"
 
 
 def test_gateway_url_override_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
