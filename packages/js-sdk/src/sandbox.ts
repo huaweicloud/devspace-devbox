@@ -302,18 +302,15 @@ export class Sandbox {
   }
 
   async #gatewayTransport(): Promise<Transport> {
-    if (this.#connection.expiresAt && this.#connection.expiresAt.getTime() <= Date.now() + 30_000) {
-      await this.#refreshConnection();
-    }
     if (!this.#gateway) {
-      const url = this.#context.gatewayUrl ?? this.#connection.gatewayUrl;
+      const url = this.#context.gatewayUrl ?? this.#connection.domain;
       if (!url) throw new ProtocolError("sandbox response does not provide an EnvD endpoint");
       if (url.replace(/^https:\/\//, "").endsWith(".sandbox.devbox.local")) {
         throw new ProtocolError("Manager returned a placeholder EnvD endpoint");
       }
       this.#gateway = new Transport(url, {
         headers: {
-          "X-Access-Token": this.#connection.accessToken,
+          "X-Access-Token": this.#connection.envdAccessToken,
           "E2B-Sandbox-Id": this.sandboxId,
         },
         timeoutMs: this.#context.requestTimeoutMs,
@@ -321,16 +318,6 @@ export class Sandbox {
       });
     }
     return this.#gateway;
-  }
-
-  async #refreshConnection(): Promise<void> {
-    const payload = await this.#control.request(
-      "POST",
-      `/sandboxes/${identifier(this.sandboxId)}/connect`,
-      { json: { timeout: 300 } },
-    );
-    [this.#info, this.#connection] = sandboxPayload(payload);
-    await this.#closeGateway();
   }
 
   async #closeGateway(): Promise<void> {
@@ -359,11 +346,8 @@ function createBody(template: string, options: CreateSandboxOptions): WireObject
 
 function sandboxPayload(value: unknown): [SandboxInfo, SandboxConnection] {
   const payload = objectValue(value);
-  const sandbox =
-    payload.sandbox && typeof payload.sandbox === "object" ? objectValue(payload.sandbox) : payload;
-  const info = parseSandboxInfo(sandbox);
-  const connectionValue = payload.connection ?? sandbox.connection ?? sandbox;
-  return [info, parseConnection(objectValue(connectionValue), info.sandboxId)];
+  const info = parseSandboxInfo(payload);
+  return [info, parseConnection(payload, info.sandboxId)];
 }
 
 function controlTransport(config: ConnectionConfig): Transport {

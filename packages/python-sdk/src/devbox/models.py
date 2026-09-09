@@ -102,40 +102,25 @@ class SandboxInfo:
 @dataclass(frozen=True, slots=True)
 class SandboxConnection:
     sandbox_id: str
-    gateway_url: str
-    access_token: str = field(repr=False)
-    expires_at: datetime | None = None
+    domain: str
+    envd_access_token: str = field(repr=False)
+    tunnel_id: str = ""
+    tunnel_token: str = field(default="", repr=False)
+    tunnel_lifetime: int | None = None
+    tunnel_expiration: int | None = None
     protocol_version: str = "v1"
 
     @classmethod
     def from_wire(cls, value: Mapping[str, Any], sandbox_id: str) -> SandboxConnection:
         return cls(
             sandbox_id=sandbox_id,
-            gateway_url=_gateway_url(value),
-            access_token=str(
-                _pick(
-                    value,
-                    "accessToken",
-                    "access_token",
-                    "envdAccessToken",
-                    "envd_access_token",
-                    "token",
-                    default="",
-                )
-            ),
-            expires_at=parse_optional_datetime(
-                _pick(value, "expiresAt", "expires_at", default=None)
-            ),
-            protocol_version=str(
-                _pick(
-                    value,
-                    "protocolVersion",
-                    "protocol_version",
-                    "envdVersion",
-                    "envd_version",
-                    default="v1",
-                )
-            ),
+            domain=_domain(value.get("domain")),
+            envd_access_token=str(value.get("envdAccessToken") or ""),
+            tunnel_id=str(value.get("tunnelId") or ""),
+            tunnel_token=str(value.get("tunnelToken") or ""),
+            tunnel_lifetime=_optional_int(value.get("tunnelLifetime")),
+            tunnel_expiration=_optional_int(value.get("tunnelExpiration")),
+            protocol_version=str(value.get("envdVersion") or "v1"),
         )
 
 
@@ -367,18 +352,8 @@ def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
     return tuple(item for item in value if isinstance(item, Mapping))
 
 
-def _gateway_url(value: Mapping[str, Any]) -> str:
-    raw = str(
-        _pick(
-            value,
-            "gatewayUrl",
-            "gateway_url",
-            "envdUrl",
-            "envd_url",
-            "domain",
-            default="",
-        )
-    )
+def _domain(value: object) -> str:
+    raw = str(value or "")
     if not raw or raw == "None":
         return ""
     return raw if raw.startswith(("http://", "https://")) else f"https://{raw}"

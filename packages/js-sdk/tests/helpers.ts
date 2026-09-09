@@ -21,15 +21,16 @@ export function connectBody(...values: Array<{ value: unknown; trailer?: boolean
 }
 
 export const sandboxResponse = {
-  sandbox: {
-    sandboxId: "sbx-1",
-    templateId: "default",
-    state: "running",
-    createdAt: "2026-09-07T00:00:00Z",
-  },
-  connection: {
-    gatewayUrl: "https://runtime.example.test",
-    accessToken: "runtime-token",
-    expiresAt: "2026-09-07T01:00:00Z",
-  },
+  sandboxID: "sbx-1",
+  templateID: "default",
+  clientID: "client-1",
+  envdVersion: "1.0.0",
+  envdAccessToken: "envd-token",
+  domain: "runtime.example.test",
+  sandboxProxyDomain: "devbox.example.test",
+  trafficAccessToken: "traffic-token",
+  tunnelId: "aaaadysa",
+  tunnelToken: "tunnel-token",
+  tunnelLifetime: 86_400,
+  tunnelExpiration: 1_788_946_515,
 };

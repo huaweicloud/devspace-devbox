@@ -1,12 +1,25 @@
 import type { MockAgent } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { DevBox } from "../src/client.js";
-import { SandboxState } from "../src/models.js";
+import { parseConnection, SandboxState } from "../src/models.js";
 import { mockAgent, sandboxResponse } from "./helpers.js";
 
 describe("sandboxes", () => {
   let agent: MockAgent | undefined;
   afterEach(async () => agent?.close());
+
+  it("parses the manager tunnel connection contract", () => {
+    expect(parseConnection(sandboxResponse, "sbx-1")).toEqual({
+      sandboxId: "sbx-1",
+      domain: "https://runtime.example.test",
+      envdAccessToken: "envd-token",
+      tunnelId: "aaaadysa",
+      tunnelToken: "tunnel-token",
+      tunnelLifetime: 86_400,
+      tunnelExpiration: 1_788_946_515,
+      protocolVersion: "1.0.0",
+    });
+  });
 
   it("creates a sandbox using the manager wire contract", async () => {
     agent = mockAgent();
@@ -70,7 +83,7 @@ describe("sandboxes", () => {
     agent
       .get("https://manager.example.test")
       .intercept({ path: "/v2/sandboxes?limit=10", method: "GET" })
-      .reply(200, [sandboxResponse.sandbox], {
+      .reply(200, [sandboxResponse], {
         headers: { "X-Next-Token": "next", "X-Total-Running": "1" },
       });
     const client = new DevBox({

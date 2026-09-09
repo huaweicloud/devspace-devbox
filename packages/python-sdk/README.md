@@ -178,8 +178,8 @@ asyncio.run(main())
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
 | 请求超时 | 构造参数 `request_timeout` | 30 秒 |
 
-构造参数优先于环境变量。API Key 只发送给管理面；Manager 返回的短期连接令牌只发送给
-数据面。SDK 不持久化这两种凭证。
+构造参数优先于环境变量。API Key 只发送给管理面；Manager 返回的 EnvD 访问令牌只发送给
+数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Tunnel Token。
 
 SDK 仅重试连接建立失败，不自动重试限流、服务端错误或可能已经到达服务端的写操作。
 

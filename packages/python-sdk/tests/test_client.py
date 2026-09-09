@@ -45,6 +45,11 @@ def test_create_uses_manager_contract() -> None:
     assert "network" not in body
     assert "allow_internet_access" not in body
     assert sandbox.sandbox_id == "sbx_123"
+    assert sandbox._connection.tunnel_id == "aaaadysa"
+    assert sandbox._connection.tunnel_lifetime == 86400
+    assert sandbox._connection.tunnel_expiration == 1788946515
+    assert "envd-token" not in repr(sandbox._connection)
+    assert "tunnel-token" not in repr(sandbox._connection)
 
 
 def test_v2_list_reads_pagination_headers() -> None:
@@ -212,8 +217,8 @@ def test_https_gateway_url_can_override_manager_placeholder(
     config = ConnectionConfig.resolve(api_key="secret")
     connection = SandboxConnection(
         sandbox_id="sbx_123",
-        gateway_url="https://sbx_123.sandbox.devbox.local",
-        access_token="token",
+        domain="https://sbx_123.sandbox.devbox.local",
+        envd_access_token="token",
     )
 
     assert _gateway_url(connection, config.gateway_url) == "https://gateway.example.test"
@@ -284,8 +289,14 @@ def connection_response(sandbox_id: str = "sbx_123") -> dict[str, object]:
         "sandboxID": sandbox_id,
         "clientID": "client_1",
         "envdVersion": "1.0.0",
-        "envdAccessToken": "",
-        "domain": "",
+        "envdAccessToken": "envd-token",
+        "domain": "sbx_123.sandbox.devbox.local",
+        "sandboxProxyDomain": "devbox.example.test",
+        "trafficAccessToken": "traffic-token",
+        "tunnelId": "aaaadysa",
+        "tunnelToken": "tunnel-token",
+        "tunnelLifetime": 86400,
+        "tunnelExpiration": 1788946515,
     }
 
 

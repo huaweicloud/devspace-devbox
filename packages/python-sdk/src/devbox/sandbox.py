@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import TracebackType
 from typing import Any
 from urllib.parse import quote
@@ -366,15 +366,6 @@ class Sandbox:
             self._info = replace(self._info, state=SandboxState.STOPPED)
             return False
 
-    def _refresh_connection(self, timeout: int = 300) -> None:
-        self._apply_connection(
-            self._control.request(
-                "POST",
-                f"/sandboxes/{_id(self.sandbox_id)}/connect",
-                json_body={"timeout": _checked_timeout(timeout)},
-            )
-        )
-
     def set_timeout(self, timeout: int) -> None:
         """Set the remaining sandbox lifetime in seconds."""
         self._control.request(
@@ -455,8 +446,6 @@ class Sandbox:
             self.close()
 
     def _gateway_transport(self) -> SyncTransport:
-        if _expires_soon(self._connection.expires_at):
-            self._refresh_connection()
         if self._gateway is None:
             self._gateway = SyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),
@@ -464,10 +453,6 @@ class Sandbox:
                 timeout=self._request_timeout,
             )
         return self._gateway
-
-    def _apply_connection(self, payload: object) -> None:
-        self._info, self._connection = _sandbox_payload(payload)
-        self._close_gateway()
 
     def _close_gateway(self) -> None:
         if self._gateway is not None:
@@ -608,15 +593,6 @@ class AsyncSandbox:
             self._info = replace(self._info, state=SandboxState.STOPPED)
             return False
 
-    async def _refresh_connection(self, timeout: int = 300) -> None:
-        await self._apply_connection(
-            await self._control.request(
-                "POST",
-                f"/sandboxes/{_id(self.sandbox_id)}/connect",
-                json_body={"timeout": _checked_timeout(timeout)},
-            )
-        )
-
     async def set_timeout(self, timeout: int) -> None:
         await self._control.request(
             "POST",
@@ -693,8 +669,6 @@ class AsyncSandbox:
             await self.close()
 
     async def _gateway_transport(self) -> AsyncTransport:
-        if _expires_soon(self._connection.expires_at):
-            await self._refresh_connection()
         if self._gateway is None:
             self._gateway = AsyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),
@@ -702,10 +676,6 @@ class AsyncSandbox:
                 timeout=self._request_timeout,
             )
         return self._gateway
-
-    async def _apply_connection(self, payload: object) -> None:
-        self._info, self._connection = _sandbox_payload(payload)
-        await self._close_gateway()
 
     async def _close_gateway(self) -> None:
         if self._gateway is not None:
@@ -784,10 +754,8 @@ def _create_body(
 
 def _sandbox_payload(value: object) -> tuple[SandboxInfo, SandboxConnection]:
     payload = _mapping(value)
-    sandbox = _mapping(payload.get("sandbox", payload))
-    info = SandboxInfo.from_wire(sandbox)
-    connection = payload.get("connection", sandbox.get("connection", sandbox))
-    return info, SandboxConnection.from_wire(_mapping(connection), info.sandbox_id)
+    info = SandboxInfo.from_wire(payload)
+    return info, SandboxConnection.from_wire(payload, info.sandbox_id)
 
 
 def _sandbox_page(value: object, next_token: str | None, total: str | None) -> Page[SandboxInfo]:
@@ -898,19 +866,18 @@ def _id(value: str) -> str:
 
 
 def _gateway_headers(connection: SandboxConnection) -> dict[str, str]:
-    return {"X-Access-Token": connection.access_token, "E2B-Sandbox-Id": connection.sandbox_id}
+    return {
+        "X-Access-Token": connection.envd_access_token,
+        "E2B-Sandbox-Id": connection.sandbox_id,
+    }
 
 
 def _gateway_url(connection: SandboxConnection, configured_url: str | None = None) -> str:
     if configured_url:
         return configured_url
-    url = connection.gateway_url
+    url = connection.domain
     if not url:
         raise ProtocolError("sandbox response does not provide an EnvD endpoint")
     if url.removeprefix("https://").endswith(".sandbox.devbox.local"):
         raise ProtocolError("Manager returned a placeholder EnvD endpoint")
     return url
-
-
-def _expires_soon(expires_at: datetime | None) -> bool:
-    return bool(expires_at and expires_at <= datetime.now(timezone.utc) + timedelta(seconds=30))

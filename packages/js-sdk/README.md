@@ -151,7 +151,7 @@ try {
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
 | 请求超时 | `requestTimeoutMs` | 30000 毫秒 |
 
-构造参数优先于环境变量。API Key 只发送给管理面，Manager 返回的短期令牌只发送给对应数据面。SDK 不持久化凭证，也不会把凭证跟随重定向发送到其他地址。
+构造参数优先于环境变量。API Key 只发送给管理面，Manager 返回的 EnvD 访问令牌只发送给数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Tunnel Token，也不会把凭证跟随重定向发送到其他地址。
 
 SDK 只对连接建立失败进行两次短间隔重试，不重试服务端错误、限流或可能已到达服务端的写操作。
 

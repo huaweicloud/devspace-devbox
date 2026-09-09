@@ -71,9 +71,12 @@ export interface SandboxInfo {
 
 export interface SandboxConnection {
   sandboxId: string;
-  gatewayUrl: string;
-  accessToken: string;
-  expiresAt?: Date;
+  domain: string;
+  envdAccessToken: string;
+  tunnelId: string;
+  tunnelToken: string;
+  tunnelLifetime?: number;
+  tunnelExpiration?: number;
   protocolVersion: string;
 }
 
@@ -189,29 +192,18 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
 }
 
 export function parseConnection(value: WireObject, sandboxId: string): SandboxConnection {
-  let gatewayUrl = stringValue(
-    pickOr(value, "", "gatewayUrl", "gateway_url", "envdUrl", "envd_url", "domain"),
-  );
-  if (gatewayUrl && !gatewayUrl.startsWith("http://") && !gatewayUrl.startsWith("https://"))
-    gatewayUrl = `https://${gatewayUrl}`;
+  let domain = stringValue(value.domain ?? "");
+  if (domain && !domain.startsWith("http://") && !domain.startsWith("https://"))
+    domain = `https://${domain}`;
   return {
     sandboxId,
-    gatewayUrl,
-    accessToken: stringValue(
-      pickOr(
-        value,
-        "",
-        "accessToken",
-        "access_token",
-        "envdAccessToken",
-        "envd_access_token",
-        "token",
-      ),
-    ),
-    expiresAt: optionalDate(pickOr(value, undefined, "expiresAt", "expires_at")),
-    protocolVersion: stringValue(
-      pickOr(value, "v1", "protocolVersion", "protocol_version", "envdVersion", "envd_version"),
-    ),
+    domain,
+    envdAccessToken: stringValue(value.envdAccessToken ?? ""),
+    tunnelId: stringValue(value.tunnelId ?? ""),
+    tunnelToken: stringValue(value.tunnelToken ?? ""),
+    tunnelLifetime: optionalNumber(value.tunnelLifetime),
+    tunnelExpiration: optionalNumber(value.tunnelExpiration),
+    protocolVersion: stringValue(value.envdVersion ?? "v1"),
   };
 }
 
