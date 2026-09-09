@@ -33,7 +33,6 @@ try {
     client.sandboxes.create(template, {
       timeout: 300,
       metadata: { sdk_validation: "javascript" },
-      network: { allowInternetAccess: true },
     }),
   );
   if (!sandbox) {
@@ -75,10 +74,6 @@ async function validateSandbox(client, sandbox, validator) {
   await validator.verify("manager.refresh", () => sandbox.refresh(300));
   await validator.verify("manager.metrics", () => sandbox.getMetrics());
   await validator.verify("manager.logs", () => sandbox.getLogs({ limit: 20 }));
-  await validator.verify("manager.updateNetwork", () =>
-    sandbox.updateNetwork({ allowInternetAccess: true }),
-  );
-
   const runtime = await validator.verify("runtime.ready", async () => {
     const result = await sandbox.commands.run("printf runtime-ready");
     equal(result.stdout, "runtime-ready");

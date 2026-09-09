@@ -11,7 +11,6 @@ from devbox import (
     AsyncDevBox,
     ConfigurationError,
     DevBox,
-    NetworkConfig,
     ProtocolError,
     RateLimitError,
     SandboxState,
@@ -34,7 +33,6 @@ def test_create_uses_manager_contract() -> None:
             timeout=300,
             envs={"A": "1"},
             metadata={"job": "test"},
-            network=NetworkConfig(allow_public_traffic=True),
         )
 
     body = json.loads(captured[0].content)
@@ -44,7 +42,8 @@ def test_create_uses_manager_contract() -> None:
     assert body["envVars"] == {"A": "1"}
     assert "autoPause" not in body
     assert "autoResume" not in body
-    assert body["network"]["allowPublicTraffic"] is True
+    assert "network" not in body
+    assert "allow_internet_access" not in body
     assert sandbox.sandbox_id == "sbx_123"
 
 

@@ -42,19 +42,6 @@ export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
 export const LogsDirection = { Backward: "backward", Forward: "forward" } as const;
 export type LogsDirection = (typeof LogsDirection)[keyof typeof LogsDirection];
 
-export interface NetworkRule {
-  headers?: Record<string, string>;
-}
-
-export interface NetworkConfig {
-  allowInternetAccess?: boolean;
-  allowPublicTraffic?: boolean;
-  allowOut?: string[];
-  denyOut?: string[];
-  maskRequestHost?: string;
-  rules?: Record<string, NetworkRule[]>;
-}
-
 export interface VolumeMount {
   name: string;
   path: string;
@@ -78,13 +65,6 @@ export interface SandboxInfo {
   memoryMb?: number;
   diskSizeMb?: number;
   metadata: Record<string, string>;
-  network: Required<
-    Pick<
-      NetworkConfig,
-      "allowInternetAccess" | "allowPublicTraffic" | "allowOut" | "denyOut" | "rules"
-    >
-  > &
-    Pick<NetworkConfig, "maskRequestHost">;
   lifecycle?: SandboxLifecycle;
   volumeMounts: VolumeMount[];
 }
@@ -167,33 +147,11 @@ export interface Page<T> {
   total?: number;
 }
 
-export function networkCreateWire(config: NetworkConfig = {}): WireObject {
-  const value: WireObject = {
-    allowPublicTraffic: config.allowPublicTraffic ?? false,
-    allowOut: config.allowOut ?? [],
-    denyOut: config.denyOut ?? [],
-    rules: rulesToWire(config.rules ?? {}),
-  };
-  if (config.maskRequestHost !== undefined) value.maskRequestHost = config.maskRequestHost;
-  return value;
-}
-
-export function networkUpdateWire(config: NetworkConfig): WireObject {
-  return {
-    allowOut: config.allowOut ?? [],
-    denyOut: config.denyOut ?? [],
-    rules: rulesToWire(config.rules ?? {}),
-    allow_internet_access: config.allowInternetAccess ?? true,
-  };
-}
-
 export function parseSandboxInfo(value: WireObject): SandboxInfo {
   const state = stringValue(pickOr(value, "running", "state", "status"));
   if (!Object.values(SandboxState).includes(state as SandboxState)) {
     throw new ProtocolError("DevBox returned an invalid SandboxState");
   }
-  const network =
-    value.network && typeof value.network === "object" ? objectValue(value.network) : {};
   const lifecycle =
     value.lifecycle && typeof value.lifecycle === "object"
       ? objectValue(value.lifecycle)
@@ -213,14 +171,6 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
     memoryMb: optionalNumber(value.memoryMB),
     diskSizeMb: optionalNumber(value.diskSizeMB),
     metadata: stringRecord(value.metadata),
-    network: {
-      allowInternetAccess: Boolean(value.allowInternetAccess ?? true),
-      allowPublicTraffic: Boolean(network.allowPublicTraffic ?? false),
-      allowOut: stringArray(network.allowOut),
-      denyOut: stringArray(network.denyOut),
-      maskRequestHost: optionalString(network.maskRequestHost),
-      rules: rulesFromWire(network.rules),
-    },
     lifecycle: lifecycle
       ? {
           autoResume: Boolean(lifecycle.autoResume ?? false),
@@ -329,35 +279,6 @@ export function parseFileInfo(value: WireObject): FileInfo {
     modifiedAt: optionalDate(pickOr(value, undefined, "modifiedTime", "modifiedAt", "modified_at")),
     symlinkTarget: optionalString(pickOr(value, undefined, "symlinkTarget", "symlink_target")),
   };
-}
-
-function rulesToWire(rules: Record<string, NetworkRule[]>): WireObject {
-  return Object.fromEntries(
-    Object.entries(rules).map(([path, values]) => [
-      path,
-      values.map((rule) => ({ transform: { headers: { ...rule.headers } } })),
-    ]),
-  );
-}
-
-function rulesFromWire(value: unknown): Record<string, NetworkRule[]> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).map(([path, items]) => [
-      path,
-      Array.isArray(items)
-        ? items
-            .map((item) => objectValue(item))
-            .map((item) => {
-              const transform =
-                item.transform && typeof item.transform === "object"
-                  ? objectValue(item.transform)
-                  : {};
-              return { headers: stringRecord(transform.headers) };
-            })
-        : [],
-    ]),
-  );
 }
 
 export function parseObjectItems(value: unknown): WireObject[] {

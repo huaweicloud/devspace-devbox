@@ -27,56 +27,6 @@ class FileType(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class NetworkRule:
-    headers: Mapping[str, str] = field(default_factory=dict, repr=False)
-
-    def to_wire(self) -> dict[str, object]:
-        return {"transform": {"headers": dict(self.headers)}}
-
-
-@dataclass(frozen=True, slots=True)
-class NetworkConfig:
-    allow_internet_access: bool = True
-    allow_public_traffic: bool = False
-    allow_out: tuple[str, ...] = ()
-    deny_out: tuple[str, ...] = ()
-    mask_request_host: str | None = None
-    rules: Mapping[str, tuple[NetworkRule, ...]] = field(default_factory=dict)
-
-    def to_create_wire(self) -> dict[str, object]:
-        value: dict[str, object] = {
-            "allowPublicTraffic": self.allow_public_traffic,
-            "allowOut": list(self.allow_out),
-            "denyOut": list(self.deny_out),
-            "rules": _rules_to_wire(self.rules),
-        }
-        if self.mask_request_host is not None:
-            value["maskRequestHost"] = self.mask_request_host
-        return value
-
-    def to_update_wire(self) -> dict[str, object]:
-        return {
-            "allowOut": list(self.allow_out),
-            "denyOut": list(self.deny_out),
-            "rules": _rules_to_wire(self.rules),
-            "allow_internet_access": self.allow_internet_access,
-        }
-
-    @classmethod
-    def from_wire(cls, value: object, *, allow_internet_access: bool = True) -> NetworkConfig:
-        if not isinstance(value, Mapping):
-            return cls(allow_internet_access=allow_internet_access)
-        return cls(
-            allow_internet_access=allow_internet_access,
-            allow_public_traffic=bool(value.get("allowPublicTraffic", False)),
-            allow_out=_string_tuple(value.get("allowOut")),
-            deny_out=_string_tuple(value.get("denyOut")),
-            mask_request_host=_optional_str(value.get("maskRequestHost")),
-            rules=_rules_from_wire(value.get("rules")),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class VolumeMount:
     name: str
     path: str
@@ -118,7 +68,6 @@ class SandboxInfo:
     memory_mb: int | None = None
     disk_size_mb: int | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
-    network: NetworkConfig = field(default_factory=NetworkConfig)
     lifecycle: SandboxLifecycle | None = None
     volume_mounts: tuple[VolumeMount, ...] = ()
 
@@ -143,10 +92,6 @@ class SandboxInfo:
             memory_mb=_optional_int(value.get("memoryMB")),
             disk_size_mb=_optional_int(value.get("diskSizeMB")),
             metadata=_string_map(value.get("metadata")),
-            network=NetworkConfig.from_wire(
-                value.get("network"),
-                allow_internet_access=bool(value.get("allowInternetAccess", True)),
-            ),
             lifecycle=SandboxLifecycle.from_wire(value.get("lifecycle")),
             volume_mounts=tuple(
                 VolumeMount.from_wire(item) for item in _mapping_items(value.get("volumeMounts"))
@@ -420,26 +365,6 @@ def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
-
-
-def _rules_to_wire(
-    value: Mapping[str, tuple[NetworkRule, ...]],
-) -> dict[str, list[dict[str, object]]]:
-    return {key: [rule.to_wire() for rule in rules] for key, rules in value.items()}
-
-
-def _rules_from_wire(value: object) -> Mapping[str, tuple[NetworkRule, ...]]:
-    if not isinstance(value, Mapping):
-        return {}
-    result: dict[str, tuple[NetworkRule, ...]] = {}
-    for key, rules in value.items():
-        parsed: list[NetworkRule] = []
-        for item in _mapping_items(rules):
-            transform = item.get("transform")
-            headers = transform.get("headers") if isinstance(transform, Mapping) else None
-            parsed.append(NetworkRule(headers=_string_map(headers)))
-        result[str(key)] = tuple(parsed)
-    return result
 
 
 def _gateway_url(value: Mapping[str, Any]) -> str:

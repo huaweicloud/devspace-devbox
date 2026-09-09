@@ -30,8 +30,6 @@ export {
   type FileWatchEvent,
   LogLevel,
   LogsDirection,
-  type NetworkConfig,
-  type NetworkRule,
   type Page,
   type ProcessInfo,
   type PtySize,

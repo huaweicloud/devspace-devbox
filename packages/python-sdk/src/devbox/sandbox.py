@@ -17,7 +17,6 @@ from .git import AsyncGit, Git
 from .models import (
     LogLevel,
     LogsDirection,
-    NetworkConfig,
     Page,
     SandboxConnection,
     SandboxInfo,
@@ -50,7 +49,6 @@ class Sandboxes:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        network: NetworkConfig | None = None,
         secure: bool = True,
         client_id: str | None = None,
         build_id: str | None = None,
@@ -65,7 +63,6 @@ class Sandboxes:
                 timeout,
                 envs,
                 metadata,
-                network,
                 secure,
                 client_id,
                 build_id,
@@ -150,7 +147,6 @@ class AsyncSandboxes:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        network: NetworkConfig | None = None,
         secure: bool = True,
         client_id: str | None = None,
         build_id: str | None = None,
@@ -165,7 +161,6 @@ class AsyncSandboxes:
                 timeout,
                 envs,
                 metadata,
-                network,
                 secure,
                 client_id,
                 build_id,
@@ -275,7 +270,6 @@ class Sandbox:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        network: NetworkConfig | None = None,
         secure: bool = True,
         client_id: str | None = None,
         build_id: str | None = None,
@@ -305,7 +299,6 @@ class Sandbox:
                 timeout=timeout,
                 envs=envs,
                 metadata=metadata,
-                network=network,
                 secure=secure,
                 client_id=client_id,
                 build_id=build_id,
@@ -438,12 +431,6 @@ class Sandbox:
         )
         return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
 
-    def update_network(self, network: NetworkConfig) -> None:
-        """Replace the sandbox network policy."""
-        self._control.request(
-            "PUT", f"/sandboxes/{_id(self.sandbox_id)}/network", json_body=network.to_update_wire()
-        )
-
     def close(self) -> None:
         """Close local connections without deleting the remote sandbox."""
         self._close_gateway()
@@ -526,7 +513,6 @@ class AsyncSandbox:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        network: NetworkConfig | None = None,
         secure: bool = True,
         client_id: str | None = None,
         build_id: str | None = None,
@@ -556,7 +542,6 @@ class AsyncSandbox:
                 timeout=timeout,
                 envs=envs,
                 metadata=metadata,
-                network=network,
                 secure=secure,
                 client_id=client_id,
                 build_id=build_id,
@@ -684,11 +669,6 @@ class AsyncSandbox:
         )
         return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
 
-    async def update_network(self, network: NetworkConfig) -> None:
-        await self._control.request(
-            "PUT", f"/sandboxes/{_id(self.sandbox_id)}/network", json_body=network.to_update_wire()
-        )
-
     async def close(self) -> None:
         """Close local connections without deleting the remote sandbox."""
         await self._close_gateway()
@@ -780,7 +760,6 @@ def _create_body(
     timeout: int,
     envs: Mapping[str, str] | None,
     metadata: Mapping[str, str] | None,
-    network: NetworkConfig | None,
     secure: bool,
     client_id: str | None,
     build_id: str | None,
@@ -788,13 +767,10 @@ def _create_body(
 ) -> dict[str, object]:
     if not template.strip():
         raise ValueError("template must not be blank")
-    resolved_network = network or NetworkConfig()
     body: dict[str, object] = {
         "templateID": template,
         "timeout": _checked_timeout(timeout),
         "secure": secure,
-        "allow_internet_access": resolved_network.allow_internet_access,
-        "network": resolved_network.to_create_wire(),
         "metadata": dict(metadata or {}),
         "envVars": dict(envs or {}),
         "volumeMounts": [item.to_wire() for item in volume_mounts],

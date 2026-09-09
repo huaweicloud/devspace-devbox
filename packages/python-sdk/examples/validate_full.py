@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
 
-from devbox import CommandResult, DevBox, NetworkConfig, PtySize, Sandbox
+from devbox import CommandResult, DevBox, PtySize, Sandbox
 
 T = TypeVar("T")
 
@@ -48,7 +48,6 @@ def main() -> None:
                 template,
                 timeout=300,
                 metadata={"sdk_validation": "python"},
-                network=NetworkConfig(allow_internet_access=True),
             ),
         )
         if sandbox is None:
@@ -80,11 +79,6 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
     validator.verify("manager.refresh", lambda: sandbox.refresh(300))
     validator.verify("manager.metrics", sandbox.get_metrics)
     validator.verify("manager.logs", lambda: sandbox.get_logs(limit=20))
-    validator.verify(
-        "manager.update_network",
-        lambda: sandbox.update_network(NetworkConfig(allow_internet_access=True)),
-    )
-
     runtime_ready = validator.verify("runtime.ready", lambda: _validate_runtime(sandbox))
     if runtime_ready is None:
         print("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable")

@@ -16,9 +16,6 @@ import {
 import {
   type LogLevel,
   type LogsDirection,
-  type NetworkConfig,
-  networkCreateWire,
-  networkUpdateWire,
   type Page,
   parseConnection,
   parseLogEntry,
@@ -38,7 +35,6 @@ export interface CreateSandboxOptions {
   timeout?: number;
   envs?: Readonly<Record<string, string>>;
   metadata?: Readonly<Record<string, string>>;
-  network?: NetworkConfig;
   secure?: boolean;
   clientId?: string;
   buildId?: string;
@@ -300,12 +296,6 @@ export class Sandbox {
     return parseObjectItems(payload).map(parseMetrics);
   }
 
-  async updateNetwork(network: NetworkConfig): Promise<void> {
-    await this.#control.request("PUT", `/sandboxes/${identifier(this.sandboxId)}/network`, {
-      json: networkUpdateWire(network),
-    });
-  }
-
   async close(): Promise<void> {
     await this.#closeGateway();
     if (this.#context.ownsControl) await this.#control.close();
@@ -351,13 +341,10 @@ export class Sandbox {
 
 function createBody(template: string, options: CreateSandboxOptions): WireObject {
   if (!template.trim()) throw new TypeError("template must not be blank");
-  const network = options.network ?? {};
   const body: WireObject = {
     templateID: template,
     timeout: checkedTimeout(options.timeout ?? 300),
     secure: options.secure ?? true,
-    allow_internet_access: network.allowInternetAccess ?? true,
-    network: networkCreateWire(network),
     metadata: { ...options.metadata },
     envVars: { ...options.envs },
     volumeMounts: (options.volumeMounts ?? []).map((mount) => ({

@@ -18,14 +18,15 @@ describe("sandboxes", () => {
         headers: { "X-API-Key": "devbridge_test", "Idempotency-Key": "request-1" },
       })
       .reply(({ body }) => {
-        expect(JSON.parse(String(body))).toMatchObject({
+        const request = JSON.parse(String(body));
+        expect(request).toMatchObject({
           templateID: "default",
           timeout: 600,
           secure: true,
-          allow_internet_access: true,
           envVars: { MODE: "test" },
-          network: { allowPublicTraffic: false },
         });
+        expect(request).not.toHaveProperty("network");
+        expect(request).not.toHaveProperty("allow_internet_access");
         return { statusCode: 200, data: sandboxResponse };
       });
 
