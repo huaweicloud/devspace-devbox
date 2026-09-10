@@ -223,6 +223,20 @@ python examples/demo.py
 python examples/validate_full.py
 ```
 
+`DEVBOX_GATEWAY_URL` 使用固定地址时，Full Test 会先检查该地址是否可用，
+并标明 Manager 与固定数据面的独立验证模式；这不证明新建沙箱与该数据面属于同一实例。
+
+本地环境尚未配置通配符 DNS 时，可设置 `DEVBOX_GATEWAY_IP` 为 Gateway IP，
+`DEVBOX_GATEWAY_URL` 为 `https://{tunnel_id}-{port}.<gateway-domain>`，通过以下入口运行：
+
+```bash
+python examples/run_local.py validate_full
+```
+
+该入口也支持 `basic`、`async_basic`、`demo`。DNS 覆盖仅对当前示例进程和配置的
+Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
+Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
+
 ## 开发验证
 
 ```bash

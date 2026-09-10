@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
 
-from devbox import CommandResult, DevBox, PtySize, Sandbox, ServiceUnavailableError
+import httpx
+
+from devbox import CommandResult, DevBox, NotFoundError, PtySize, Sandbox, ServiceUnavailableError
+from devbox._tls import service_ssl_context
+from devbox.config import ConnectionConfig
 
 T = TypeVar("T")
 
@@ -33,14 +37,31 @@ class Validator:
         print(f"PASS {name} | {_seconds(started_at)}s", flush=True)
         return result
 
+    def finish(self) -> None:
+        passed = self.tests - len(self.failures)
+        print(f"SUMMARY tests={self.tests} passed={passed} failed={len(self.failures)}")
+        if self.failures:
+            print(f"FAILED {', '.join(self.failures)}")
+            raise SystemExit(1)
+
 
 def main() -> None:
     template = os.getenv("DEVBOX_TEST_TEMPLATE", "default").strip() or "default"
     validator = Validator()
-    client = DevBox()
     sandbox: Sandbox | None = None
 
     print(f"DevBox full validation | template={template}")
+    gateway_url = ConnectionConfig.resolve().gateway_url
+    if gateway_url:
+        print(f"gateway={gateway_url}")
+    if gateway_url and "{tunnel_id}" not in gateway_url:
+        print("MODE fixed gateway: Manager and runtime are tested independently")
+        if validator.verify("runtime.endpoint", lambda: _check_endpoint(gateway_url)) is None:
+            print("STOP fixed runtime endpoint is unavailable; no sandbox was created")
+            validator.finish()
+            return
+
+    client = DevBox()
     try:
         sandbox = validator.verify(
             "sandbox.create",
@@ -61,11 +82,19 @@ def main() -> None:
             sandbox.close()
         client.close()
 
-    passed = validator.tests - len(validator.failures)
-    print(f"SUMMARY tests={validator.tests} passed={passed} failed={len(validator.failures)}")
-    if validator.failures:
-        print(f"FAILED {', '.join(validator.failures)}")
-        raise SystemExit(1)
+    validator.finish()
+
+
+def _check_endpoint(gateway_url: str) -> bool:
+    url = gateway_url.replace("{port}", "49983").rstrip("/") + "/health"
+    with httpx.Client(verify=service_ssl_context(), timeout=10, follow_redirects=False) as client:
+        response = client.get(url)
+    if not response.is_success:
+        reason = ""
+        if response.headers.get("content-type", "").startswith("text/plain"):
+            reason = " | " + " ".join(response.text.split())[:200]
+        raise RuntimeError(f"GET {url} | HTTP {response.status_code}{reason}")
+    return True
 
 
 def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> None:
@@ -137,12 +166,20 @@ def _validate_list(client: DevBox, sandbox: Sandbox) -> None:
 
 
 def _validate_runtime(sandbox: Sandbox) -> bool:
+    gateway_url = ConnectionConfig.resolve().gateway_url
+    if gateway_url:
+        gateway_url = gateway_url.replace("{tunnel_id}", sandbox._connection.tunnel_id)
+        print(f"runtime_url={gateway_url.replace('{port}', '49983')}", flush=True)
     deadline = time.monotonic() + 30
     while True:
         try:
             result = sandbox.commands.run("printf runtime-ready")
             _expect_result(result, stdout="runtime-ready")
             return True
+        except NotFoundError:
+            if gateway_url:
+                _check_endpoint(gateway_url)
+            raise
         except ServiceUnavailableError:
             if time.monotonic() >= deadline:
                 raise
