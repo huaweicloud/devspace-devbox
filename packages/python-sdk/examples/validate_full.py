@@ -10,7 +10,18 @@ from uuid import uuid4
 
 import httpx
 
-from devbox import CommandResult, DevBox, NotFoundError, PtySize, Sandbox, ServiceUnavailableError
+from devbox import (
+    CommandExitError,
+    CommandHandle,
+    CommandResult,
+    DevBox,
+    NotFoundError,
+    PtySize,
+    Sandbox,
+    SandboxInfo,
+    SandboxMetrics,
+    ServiceUnavailableError,
+)
 from devbox._tls import service_ssl_context
 from devbox.config import ConnectionConfig
 
@@ -25,6 +36,7 @@ class Validator:
     def verify(self, name: str, operation: Callable[[], T]) -> T | None:
         self.tests += 1
         started_at = time.monotonic()
+        print(f"\nTEST {self.tests:02d} | {name}", flush=True)
         try:
             result = operation()
         except Exception as error:
@@ -63,12 +75,18 @@ def main() -> None:
 
     client = DevBox()
     try:
+        _section(
+            "Create sandbox", f"Start template={template!r}, timeout=300s, with an isolated runtime"
+        )
         sandbox = validator.verify(
             "sandbox.create",
-            lambda: client.sandboxes.create(
-                template,
-                timeout=300,
-                metadata={"sdk_validation": "python"},
+            lambda: _step(
+                "sandboxes.create()",
+                lambda: client.sandboxes.create(
+                    template,
+                    timeout=300,
+                    metadata={"sdk_validation": "python"},
+                ),
             ),
         )
         if sandbox is None:
@@ -78,7 +96,8 @@ def main() -> None:
             validate_sandbox(client, sandbox, validator)
     finally:
         if sandbox is not None:
-            validator.verify("sandbox.delete", sandbox.kill)
+            _section("Cleanup", "Delete the remote sandbox and close local connections")
+            validator.verify("sandbox.delete", lambda: _step("sandbox.kill()", sandbox.kill))
             sandbox.close()
         client.close()
 
@@ -98,25 +117,47 @@ def _check_endpoint(gateway_url: str) -> bool:
 
 
 def _validate_connect(client: DevBox, sandbox: Sandbox) -> None:
-    connected = client.sandboxes.connect(sandbox.sandbox_id)
+    connected = _step(
+        f"sandboxes.connect({sandbox.sandbox_id!r}) | open a new SDK handle",
+        lambda: client.sandboxes.connect(sandbox.sandbox_id),
+    )
     try:
         _equal(connected.sandbox_id, sandbox.sandbox_id)
     finally:
-        connected.close()
+        _step("connected.close() | keep the remote sandbox running", connected.close)
 
 
 def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> None:
+    _section("Sandbox management", "Inspect, reconnect, extend lifetime and read monitoring data")
     validator.verify(
         "manager.get",
-        lambda: _equal(sandbox.get_info().sandbox_id, sandbox.sandbox_id),
+        lambda: _equal(
+            _step("sandbox.get_info()", sandbox.get_info).sandbox_id, sandbox.sandbox_id
+        ),
     )
-    validator.verify("manager.is_running", lambda: _equal(sandbox.is_running(), True))
+    validator.verify(
+        "manager.is_running",
+        lambda: _equal(_step("sandbox.is_running()", sandbox.is_running), True),
+    )
     validator.verify("manager.list", lambda: _validate_list(client, sandbox))
     validator.verify("manager.connect", lambda: _validate_connect(client, sandbox))
-    validator.verify("manager.set_timeout", lambda: sandbox.set_timeout(300))
-    validator.verify("manager.refresh", lambda: sandbox.refresh(300))
-    validator.verify("manager.metrics", sandbox.get_metrics)
-    validator.verify("manager.logs", lambda: sandbox.get_logs(limit=20))
+    validator.verify(
+        "manager.set_timeout",
+        lambda: _step(
+            "sandbox.set_timeout(300) | remaining lifetime: 300s", lambda: sandbox.set_timeout(300)
+        ),
+    )
+    validator.verify(
+        "manager.refresh",
+        lambda: _step(
+            "sandbox.refresh(300) | extend lifetime by 300s", lambda: sandbox.refresh(300)
+        ),
+    )
+    validator.verify("manager.metrics", lambda: _step("sandbox.get_metrics()", sandbox.get_metrics))
+    validator.verify(
+        "manager.logs",
+        lambda: _step("sandbox.get_logs(limit=20)", lambda: sandbox.get_logs(limit=20)),
+    )
     runtime_ready = validator.verify("runtime.ready", lambda: _validate_runtime(sandbox))
     if runtime_ready is None:
         print("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable")
@@ -129,24 +170,42 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
 
 
 def validate_commands(sandbox: Sandbox, validator: Validator) -> None:
+    _section("Commands", "Capture stdout/stderr, run background jobs and send standard input")
     validator.verify("commands.foreground", lambda: _foreground_command(sandbox))
     validator.verify("commands.background", lambda: _background_command(sandbox))
     validator.verify("commands.stdin", lambda: _stdin_command(sandbox))
 
 
 def validate_filesystem(sandbox: Sandbox, validator: Validator) -> None:
+    _section("Files", "Create, read, inspect, move, upload, download and remove files")
     root = f"/tmp/devbox-sdk-{uuid4().hex[:8]}"
     validator.verify("filesystem.basic", lambda: _filesystem_basic(sandbox, root))
     validator.verify("filesystem.transfer", lambda: _filesystem_transfer(sandbox, root))
-    validator.verify("filesystem.remove", lambda: sandbox.files.remove(root))
+    validator.verify(
+        "filesystem.remove",
+        lambda: _step(f"files.remove({root!r})", lambda: sandbox.files.remove(root)),
+    )
 
 
 def validate_pty(sandbox: Sandbox, validator: Validator) -> None:
+    _section("Interactive terminal", "Start Bash, resize the terminal, send input and exit")
+
     def interaction() -> None:
-        session = sandbox.pty.start(size=PtySize(rows=24, cols=80))
-        sandbox.pty.resize(session.pid, PtySize(rows=30, cols=100))
-        session.send_stdin("printf pty-ok\nexit\n")
-        result = session.wait(check=False)
+        session = _step(
+            "pty.start(rows=24, cols=80)", lambda: sandbox.pty.start(size=PtySize(rows=24, cols=80))
+        )
+        _step(
+            f"pty.resize(pid={session.pid}, rows=30, cols=100)",
+            lambda: sandbox.pty.resize(session.pid, PtySize(rows=30, cols=100)),
+        )
+        _step(
+            r"session.send_stdin('printf pty-ok\nexit\n')",
+            lambda: session.send_stdin("printf pty-ok\nexit\n"),
+        )
+        result = _step(
+            "session.wait() | read terminal output until Bash exits",
+            lambda: session.wait(check=False),
+        )
         _equal(result.exit_code, 0)
         _contains(result.stdout, "pty-ok")
 
@@ -154,23 +213,41 @@ def validate_pty(sandbox: Sandbox, validator: Validator) -> None:
 
 
 def validate_git(sandbox: Sandbox, validator: Validator) -> None:
+    _section("Git", "Initialize a repository, configure an author, stage and commit a file")
     repository = f"/tmp/devbox-sdk-git-{uuid4().hex[:8]}"
 
     def workflow() -> None:
-        sandbox.commands.run(f"mkdir -p {repository} && git -C {repository} init")
-        sandbox.git.set_config(repository, "user.name", "DevBox SDK")
-        sandbox.git.set_config(repository, "user.email", "sdk@devbox.local")
-        sandbox.files.write(f"{repository}/README.md", "test\n")
-        sandbox.git.add(repository)
-        sandbox.git.commit(repository, "test commit")
-        _equal("README.md" in sandbox.git.status(repository).stdout, False)
+        command = f"mkdir -p {repository} && git -C {repository} init"
+        _step(f"commands.run({command!r})", lambda: sandbox.commands.run(command))
+        _step(
+            "git.set_config(user.name='DevBox SDK')",
+            lambda: sandbox.git.set_config(repository, "user.name", "DevBox SDK"),
+        )
+        _step(
+            "git.set_config(user.email='sdk@devbox.local')",
+            lambda: sandbox.git.set_config(repository, "user.email", "sdk@devbox.local"),
+        )
+        _step(
+            "files.write(README.md, 'test\\n')",
+            lambda: sandbox.files.write(f"{repository}/README.md", "test\n"),
+        )
+        _step("git.add() | stage changes", lambda: sandbox.git.add(repository))
+        _step("git.commit('test commit')", lambda: sandbox.git.commit(repository, "test commit"))
+        result = _step(
+            "git.status() | expect a clean working tree", lambda: sandbox.git.status(repository)
+        )
+        _equal("README.md" in result.stdout, False)
 
     validator.verify("git.workflow", workflow)
-    validator.verify("git.remove", lambda: sandbox.files.remove(repository))
+    validator.verify(
+        "git.remove",
+        lambda: _step(f"files.remove({repository!r})", lambda: sandbox.files.remove(repository)),
+    )
 
 
 def _validate_list(client: DevBox, sandbox: Sandbox) -> None:
-    page = client.sandboxes.list(limit=100)
+    page = _step("sandboxes.list(limit=100)", lambda: client.sandboxes.list(limit=100))
+    print(f"    sandboxes={len(page.items)} | current sandbox must be present", flush=True)
     _equal(any(item.sandbox_id == sandbox.sandbox_id for item in page.items), True)
 
 
@@ -182,7 +259,10 @@ def _validate_runtime(sandbox: Sandbox) -> bool:
     deadline = time.monotonic() + 30
     while True:
         try:
-            result = sandbox.commands.run("printf runtime-ready")
+            result = _step(
+                "commands.run('printf runtime-ready') | verify remote execution",
+                lambda: sandbox.commands.run("printf runtime-ready"),
+            )
             _expect_result(result, stdout="runtime-ready")
             return True
         except NotFoundError:
@@ -192,45 +272,66 @@ def _validate_runtime(sandbox: Sandbox) -> bool:
         except ServiceUnavailableError:
             if time.monotonic() >= deadline:
                 raise
+            print("    RETRY runtime is not ready; wait 1s (maximum 30s)", flush=True)
             time.sleep(1)
 
 
 def _foreground_command(sandbox: Sandbox) -> None:
-    result = sandbox.commands.run(
-        'printf "$DEVBOX_TEST"; printf error-ok >&2',
-        envs={"DEVBOX_TEST": "command-ok"},
-        cwd="/tmp",
+    command = 'printf "$DEVBOX_TEST"; printf error-ok >&2'
+    result = _step(
+        f"commands.run({command!r}) | cwd=/tmp, DEVBOX_TEST=command-ok",
+        lambda: sandbox.commands.run(
+            'printf "$DEVBOX_TEST"; printf error-ok >&2',
+            envs={"DEVBOX_TEST": "command-ok"},
+            cwd="/tmp",
+        ),
     )
     _expect_result(result, stdout="command-ok", stderr="error-ok")
 
 
 def _background_command(sandbox: Sandbox) -> None:
-    process = sandbox.commands.run(
-        "sleep 1; printf background-ok",
-        background=True,
-        timeout=10,
+    process = _step(
+        "commands.run('sleep 1; printf background-ok', background=True, timeout=10)",
+        lambda: sandbox.commands.run(
+            "sleep 1; printf background-ok",
+            background=True,
+            timeout=10,
+        ),
     )
-    _expect_result(process.wait(), stdout="background-ok")
+    print(
+        "    SDK returned a handle; the remote process can continue in the background", flush=True
+    )
+    result = _step(
+        f"process.wait(pid={process.pid}) | wait for completion and collect output", process.wait
+    )
+    _expect_result(result, stdout="background-ok")
 
 
 def _stdin_command(sandbox: Sandbox) -> None:
-    process = sandbox.commands.run("cat", background=True, stdin=True, timeout=10)
-    process.send_stdin("stdin-ok\n")
-    process.close_stdin()
-    _expect_result(process.wait(), stdout="stdin-ok\n")
+    process = _step(
+        "commands.run('cat', background=True, stdin=True, timeout=10)",
+        lambda: sandbox.commands.run("cat", background=True, stdin=True, timeout=10),
+    )
+    _step(r"process.send_stdin('stdin-ok\n')", lambda: process.send_stdin("stdin-ok\n"))
+    _step("process.close_stdin() | send EOF so cat can finish", process.close_stdin)
+    _expect_result(
+        _step("process.wait() | collect the echoed input", process.wait), stdout="stdin-ok\n"
+    )
 
 
 def _filesystem_basic(sandbox: Sandbox, root: str) -> None:
-    sandbox.files.make_dir(root)
+    _step(f"files.make_dir({root!r})", lambda: sandbox.files.make_dir(root))
     path = f"{root}/input.txt"
     moved = f"{root}/output.txt"
-    sandbox.files.write(path, "file-ok")
-    _equal(sandbox.files.read(path), "file-ok")
-    _equal(sandbox.files.stat(path).size, 7)
-    _equal(sandbox.files.exists(path), True)
-    _equal(any(item.name == "input.txt" for item in sandbox.files.list(root)), True)
-    sandbox.files.move(path, moved)
-    _equal(sandbox.files.exists(moved), True)
+    _step(f"files.write({path!r}, 'file-ok')", lambda: sandbox.files.write(path, "file-ok"))
+    _equal(_step(f"files.read({path!r})", lambda: sandbox.files.read(path)), "file-ok")
+    _equal(_step(f"files.stat({path!r}) | size in bytes", lambda: sandbox.files.stat(path).size), 7)
+    _equal(_step(f"files.exists({path!r})", lambda: sandbox.files.exists(path)), True)
+    entries = _step(f"files.list({root!r})", lambda: sandbox.files.list(root))
+    print(f"    entries={[item.name for item in entries]}", flush=True)
+    _equal(any(item.name == "input.txt" for item in entries), True)
+    _step(f"files.move({path!r}, {moved!r})", lambda: sandbox.files.move(path, moved))
+    _equal(_step(f"files.exists({moved!r})", lambda: sandbox.files.exists(moved)), True)
 
 
 def _filesystem_transfer(sandbox: Sandbox, root: str) -> None:
@@ -238,9 +339,66 @@ def _filesystem_transfer(sandbox: Sandbox, root: str) -> None:
         source = Path(directory, "source.txt")
         target = Path(directory, "target.txt")
         source.write_text("transfer-ok", encoding="utf-8")
-        sandbox.files.upload(source, f"{root}/transfer.txt")
-        sandbox.files.download(f"{root}/transfer.txt", target)
-        _equal(target.read_text(encoding="utf-8"), "transfer-ok")
+        _step(
+            f"files.upload({str(source)!r}, {root + '/transfer.txt'!r}) | content='transfer-ok'",
+            lambda: sandbox.files.upload(source, f"{root}/transfer.txt"),
+        )
+        _step(
+            f"files.download({root + '/transfer.txt'!r}, {str(target)!r})",
+            lambda: sandbox.files.download(f"{root}/transfer.txt", target),
+        )
+        _equal(
+            _step("Read downloaded local file", lambda: target.read_text(encoding="utf-8")),
+            "transfer-ok",
+        )
+
+
+def _section(name: str, description: str) -> None:
+    print(f"\n=== {name} ===\n{description}", flush=True)
+
+
+def _step(description: str, operation: Callable[[], T]) -> T:
+    print(f"  DO {description}", flush=True)
+    started = time.monotonic()
+    try:
+        result = operation()
+    except CommandExitError as error:
+        _command_output(error.result)
+        raise
+    print(f"    DONE | {_seconds(started)}s", flush=True)
+    if isinstance(result, CommandResult):
+        _command_output(result)
+    elif isinstance(result, CommandHandle):
+        print(f"    pid={result.pid}", flush=True)
+    elif isinstance(result, SandboxInfo):
+        print(
+            f"    state={result.state.value} | template={result.template_id}"
+            f" | end_at={result.end_at}",
+            flush=True,
+        )
+    elif isinstance(result, (str, bool, int)):
+        print(f"    result={result!r}", flush=True)
+    elif isinstance(result, (list, tuple)):
+        print(f"    items={len(result)}", flush=True)
+        if result and isinstance(result[-1], SandboxMetrics):
+            sample = result[-1]
+            print(
+                f"    sample_time={sample.timestamp_unix} | cpu_used={sample.cpu_used_percent}%"
+                f" | memory_used={sample.memory_used_bytes} bytes"
+                f" | disk_used={sample.disk_used_bytes} bytes",
+                flush=True,
+            )
+    return result
+
+
+def _command_output(result: CommandResult) -> None:
+    print(f"    pid={result.pid} | exit_code={result.exit_code}", flush=True)
+    for name, value in (("stdout", result.stdout), ("stderr", result.stderr)):
+        print(f"    {name}:", flush=True)
+        for line in value[:4000].splitlines() or ["(empty)"]:
+            print(f"      {line}", flush=True)
+        if len(value) > 4000:
+            print(f"      ... truncated ({len(value)} characters total)", flush=True)
 
 
 def _expect_result(
