@@ -30,7 +30,9 @@ export const sandboxResponse = {
   sandboxProxyDomain: "devbox.example.test",
   trafficAccessToken: "traffic-token",
   tunnelId: "aaaadysa",
-  tunnelToken: "tunnel-token",
+  connectToken: "connect-token",
+  tokenLifetime: 86_400,
+  tokenExpiration: 1_789_029_315,
   tunnelLifetime: 86_400,
   tunnelExpiration: 1_788_946_515,
 };

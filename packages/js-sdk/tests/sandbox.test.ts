@@ -14,11 +14,21 @@ describe("sandboxes", () => {
       domain: "https://runtime.example.test",
       envdAccessToken: "envd-token",
       tunnelId: "aaaadysa",
-      tunnelToken: "tunnel-token",
+      connectToken: "connect-token",
+      tokenLifetime: 86_400,
+      tokenExpiration: 1_789_029_315,
       tunnelLifetime: 86_400,
       tunnelExpiration: 1_788_946_515,
       protocolVersion: "1.0.0",
     });
+  });
+
+  it("does not infer token expiration from tunnel expiration", () => {
+    const connection = parseConnection({ tunnelExpiration: 1_788_946_515 }, "sbx-1");
+    expect(connection.connectToken).toBe("");
+    expect(connection.tokenLifetime).toBeUndefined();
+    expect(connection.tokenExpiration).toBeUndefined();
+    expect(connection.tunnelExpiration).toBe(1_788_946_515);
   });
 
   it("creates a sandbox using the manager wire contract", async () => {

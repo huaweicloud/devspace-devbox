@@ -323,7 +323,7 @@ class Sandbox:
         request_timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
     ) -> Sandbox:
-        """Connect to an existing sandbox and refresh its runtime credentials."""
+        """Fetch connection information for an existing sandbox from the Manager."""
         config, transport = _sync_control(
             api_key,
             api_url,
@@ -551,7 +551,7 @@ class AsyncSandbox:
         request_timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
     ) -> AsyncSandbox:
-        """Connect to an existing sandbox and refresh its runtime credentials."""
+        """Fetch connection information for an existing sandbox from the Manager."""
         config, transport = _async_control(
             api_key,
             api_url,

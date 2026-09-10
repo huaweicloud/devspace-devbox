@@ -74,7 +74,9 @@ export interface SandboxConnection {
   domain: string;
   envdAccessToken: string;
   tunnelId: string;
-  tunnelToken: string;
+  connectToken: string;
+  tokenLifetime?: number;
+  tokenExpiration?: number;
   tunnelLifetime?: number;
   tunnelExpiration?: number;
   protocolVersion: string;
@@ -200,7 +202,9 @@ export function parseConnection(value: WireObject, sandboxId: string): SandboxCo
     domain,
     envdAccessToken: stringValue(value.envdAccessToken ?? ""),
     tunnelId: stringValue(value.tunnelId ?? ""),
-    tunnelToken: stringValue(value.tunnelToken ?? ""),
+    connectToken: stringValue(value.connectToken ?? ""),
+    tokenLifetime: optionalNumber(value.tokenLifetime),
+    tokenExpiration: optionalNumber(value.tokenExpiration),
     tunnelLifetime: optionalNumber(value.tunnelLifetime),
     tunnelExpiration: optionalNumber(value.tunnelExpiration),
     protocolVersion: stringValue(value.envdVersion ?? "v1"),

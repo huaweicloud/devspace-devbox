@@ -105,7 +105,9 @@ class SandboxConnection:
     domain: str
     envd_access_token: str = field(repr=False)
     tunnel_id: str = ""
-    tunnel_token: str = field(default="", repr=False)
+    connect_token: str = field(default="", repr=False)
+    token_lifetime: int | None = None
+    token_expiration: int | None = None
     tunnel_lifetime: int | None = None
     tunnel_expiration: int | None = None
     protocol_version: str = "v1"
@@ -117,7 +119,9 @@ class SandboxConnection:
             domain=_domain(value.get("domain")),
             envd_access_token=str(value.get("envdAccessToken") or ""),
             tunnel_id=str(value.get("tunnelId") or ""),
-            tunnel_token=str(value.get("tunnelToken") or ""),
+            connect_token=str(value.get("connectToken") or ""),
+            token_lifetime=_optional_int(value.get("tokenLifetime")),
+            token_expiration=_optional_int(value.get("tokenExpiration")),
             tunnel_lifetime=_optional_int(value.get("tunnelLifetime")),
             tunnel_expiration=_optional_int(value.get("tunnelExpiration")),
             protocol_version=str(value.get("envdVersion") or "v1"),

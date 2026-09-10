@@ -97,6 +97,14 @@ def _check_endpoint(gateway_url: str) -> bool:
     return True
 
 
+def _validate_connect(client: DevBox, sandbox: Sandbox) -> None:
+    connected = client.sandboxes.connect(sandbox.sandbox_id)
+    try:
+        _equal(connected.sandbox_id, sandbox.sandbox_id)
+    finally:
+        connected.close()
+
+
 def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> None:
     validator.verify(
         "manager.get",
@@ -104,6 +112,7 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
     )
     validator.verify("manager.is_running", lambda: _equal(sandbox.is_running(), True))
     validator.verify("manager.list", lambda: _validate_list(client, sandbox))
+    validator.verify("manager.connect", lambda: _validate_connect(client, sandbox))
     validator.verify("manager.set_timeout", lambda: sandbox.set_timeout(300))
     validator.verify("manager.refresh", lambda: sandbox.refresh(300))
     validator.verify("manager.metrics", sandbox.get_metrics)

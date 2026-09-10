@@ -151,9 +151,18 @@ try {
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
 | 请求超时 | `requestTimeoutMs` | 30000 毫秒 |
 
-构造参数优先于环境变量。API Key 只发送给管理面，Manager 返回的 EnvD 访问令牌只发送给数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Tunnel Token，也不会把凭证跟随重定向发送到其他地址。
+构造参数优先于环境变量。API Key 只发送给管理面，Manager 返回的 EnvD 访问令牌只发送给数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Connect Token，也不会把凭证跟随重定向发送到其他地址。
 
 Manager 未直接返回数据面地址的部署可以设置 URL 模板，例如 `DEVBOX_GATEWAY_URL=https://{tunnel_id}-{port}.cn-north-4-bridge.myhuaweicloud.com`。
+
+Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Unix 秒过期时间；
+`tunnelExpiration` 是隧道自身的过期时间，两者独立。SDK 在内部保留这些字段，不放入沙箱公开信息或日志。
+`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token，也不会自动续期。
+
+数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
+不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。
+当前已对齐的 Manager 源码仍返回占位 `envdAccessToken`；SDK 沿用 `X-Access-Token`，
+尚未将 `connectToken` 用于 HTTP 鉴权，需确认 Relay Gateway 的 Header 契约后完成。
 
 SDK 只对连接建立失败进行两次短间隔重试，不重试服务端错误、限流或可能已到达服务端的写操作。
 

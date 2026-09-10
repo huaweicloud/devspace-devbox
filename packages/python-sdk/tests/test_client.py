@@ -46,10 +46,34 @@ def test_create_uses_manager_contract() -> None:
     assert "allow_internet_access" not in body
     assert sandbox.sandbox_id == "sbx_123"
     assert sandbox._connection.tunnel_id == "aaaadysa"
+    assert sandbox._connection.connect_token == "connect-token"
+    assert sandbox._connection.token_lifetime == 86400
+    assert sandbox._connection.token_expiration == 1789029315
     assert sandbox._connection.tunnel_lifetime == 86400
     assert sandbox._connection.tunnel_expiration == 1788946515
     assert "envd-token" not in repr(sandbox._connection)
-    assert "tunnel-token" not in repr(sandbox._connection)
+    assert "connect-token" not in repr(sandbox._connection)
+
+
+def test_missing_token_expiration_is_not_inferred_from_tunnel_expiration() -> None:
+    connection = SandboxConnection.from_wire({"tunnelExpiration": 1788946515}, "sbx_123")
+    assert connection.connect_token == ""
+    assert connection.token_lifetime is None
+    assert connection.token_expiration is None
+    assert connection.tunnel_expiration == 1788946515
+
+
+def test_connect_reads_latest_manager_connection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sandboxes/sbx_123/connect"
+        assert json.loads(request.content) == {"timeout": 300}
+        return httpx.Response(200, json=connection_response())
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.connect("sbx_123")
+        assert sandbox._connection.connect_token == "connect-token"
+        assert sandbox._connection.token_expiration == 1789029315
+        sandbox.close()
 
 
 def test_v2_list_reads_pagination_headers() -> None:
@@ -178,6 +202,23 @@ async def test_async_client_uses_same_contract() -> None:
     ) as api:
         sandbox = await api.sandboxes.create()
     assert sandbox.sandbox_id == "sbx_async"
+    assert sandbox._connection.connect_token == "connect-token"
+    assert sandbox._connection.token_expiration == 1789029315
+
+
+@pytest.mark.asyncio
+async def test_async_connect_reads_latest_manager_connection() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sandboxes/sbx_async/connect"
+        return httpx.Response(200, json=connection_response("sbx_async"))
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.connect("sbx_async")
+        assert sandbox._connection.connect_token == "connect-token"
+        assert sandbox._connection.token_expiration == 1789029315
+        await sandbox.close()
 
 
 @pytest.mark.asyncio
@@ -298,7 +339,9 @@ def connection_response(sandbox_id: str = "sbx_123") -> dict[str, object]:
         "sandboxProxyDomain": "devbox.example.test",
         "trafficAccessToken": "traffic-token",
         "tunnelId": "aaaadysa",
-        "tunnelToken": "tunnel-token",
+        "connectToken": "connect-token",
+        "tokenLifetime": 86400,
+        "tokenExpiration": 1789029315,
         "tunnelLifetime": 86400,
         "tunnelExpiration": 1788946515,
     }

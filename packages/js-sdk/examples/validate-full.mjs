@@ -71,6 +71,14 @@ async function validateSandbox(client, sandbox, validator) {
     );
   });
   await validator.verify("manager.setTimeout", () => sandbox.setTimeout(300));
+  await validator.verify("manager.connect", async () => {
+    const connected = await client.sandboxes.connect(sandbox.sandboxId);
+    try {
+      equal(connected.sandboxId, sandbox.sandboxId);
+    } finally {
+      await connected.close();
+    }
+  });
   await validator.verify("manager.refresh", () => sandbox.refresh(300));
   await validator.verify("manager.metrics", () => sandbox.getMetrics());
   await validator.verify("manager.logs", () => sandbox.getLogs({ limit: 20 }));
