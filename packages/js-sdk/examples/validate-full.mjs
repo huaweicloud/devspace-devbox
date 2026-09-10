@@ -17,7 +17,7 @@ class Validator {
       return result;
     } catch (error) {
       this.failures.push(name);
-      console.error(`FAIL ${name} | ${seconds(started)}s | ${error.name}: ${error.message}`);
+      console.log(`FAIL ${name} | ${seconds(started)}s | ${error.name}: ${error.message}`);
       return undefined;
     }
   }
@@ -40,7 +40,7 @@ try {
     ),
   );
   if (!sandbox) {
-    console.error("STOP sandbox creation failed; runtime validation cannot continue");
+    console.log("STOP sandbox creation failed; runtime validation cannot continue");
   } else {
     await validateSandbox(client, sandbox, validator);
   }
@@ -57,7 +57,7 @@ console.log(
   `SUMMARY tests=${validator.tests} passed=${validator.tests - validator.failures.length} failed=${validator.failures.length}`,
 );
 if (validator.failures.length) {
-  console.error(`FAILED ${validator.failures.join(", ")}`);
+  console.log(`FAILED ${validator.failures.join(", ")}`);
   process.exitCode = 1;
 }
 
