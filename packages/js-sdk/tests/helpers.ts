@@ -25,7 +25,6 @@ export const sandboxResponse = {
   templateID: "default",
   clientID: "client-1",
   envdVersion: "1.0.0",
-  envdAccessToken: "envd-token",
   domain: "runtime.example.test",
   sandboxProxyDomain: "devbox.example.test",
   trafficAccessToken: "traffic-token",

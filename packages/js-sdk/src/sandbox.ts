@@ -308,6 +308,9 @@ export class Sandbox {
 
   async #gatewayTransport(): Promise<Transport> {
     if (!this.#gateway) {
+      if (!this.#connection.connectToken || /[^A-Za-z0-9._-]/.test(this.#connection.connectToken)) {
+        throw new ProtocolError("sandbox response does not provide a valid connectToken");
+      }
       const url = gatewayUrl(this.#connection, this.#context.gatewayUrl);
       if (!url) throw new ProtocolError("sandbox response does not provide an EnvD endpoint");
       if (url.replace(/^https:\/\//, "").endsWith(".sandbox.devbox.local")) {
@@ -315,7 +318,7 @@ export class Sandbox {
       }
       this.#gateway = new Transport(url, {
         headers: {
-          "X-Access-Token": this.#connection.envdAccessToken,
+          Cookie: `relay_token=${this.#connection.connectToken}`,
           "E2B-Sandbox-Id": this.sandboxId,
           "E2B-Sandbox-Port": "49983",
         },

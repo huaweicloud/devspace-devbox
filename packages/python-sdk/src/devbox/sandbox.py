@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -871,8 +872,10 @@ def _id(value: str) -> str:
 
 
 def _gateway_headers(connection: SandboxConnection) -> dict[str, str]:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", connection.connect_token):
+        raise ProtocolError("sandbox response does not provide a valid connectToken")
     return {
-        "X-Access-Token": connection.envd_access_token,
+        "Cookie": f"relay_token={connection.connect_token}",
         "E2B-Sandbox-Id": connection.sandbox_id,
         "E2B-Sandbox-Port": "49983",
     }

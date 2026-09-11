@@ -18,7 +18,54 @@ from devbox import (
 )
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
-from devbox.sandbox import _gateway_url
+from devbox.sandbox import _gateway_headers, _gateway_url
+
+
+@pytest.mark.parametrize("token", ["", "bad; other=value", "bad\r\nX-Test: value", "bad\n"])
+def test_gateway_rejects_missing_or_unsafe_connect_token(token: str) -> None:
+    connection = SandboxConnection.from_wire(
+        {"connectToken": token, "envdAccessToken": "obsolete-token"}, "sbx_123"
+    )
+    with pytest.raises(ProtocolError, match="valid connectToken"):
+        _gateway_headers(connection)
+
+
+def test_gateway_uses_relay_cookie_for_all_runtime_requests() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+    with client(lambda _: httpx.Response(201, json=response)) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            for path in ("/files", "/process.Process/Start", "/filesystem.Filesystem/WatchDir"):
+                request = gateway._client.build_request("POST", path)
+                assert request.headers["Cookie"] == "relay_token=connect-token"
+                assert request.headers["E2B-Sandbox-Id"] == "sbx_123"
+                assert "X-Access-Token" not in request.headers
+                assert "X-API-Key" not in request.headers
+            assert "Cookie" not in api._transport._client.headers
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_gateway_uses_relay_cookie() -> None:
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        gateway_url="https://runtime.example.test",
+        http_transport=httpx.MockTransport(
+            lambda _: httpx.Response(201, json=connection_response())
+        ),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            request = gateway._client.build_request("POST", "/process.Process/Start")
+            assert request.headers["Cookie"] == "relay_token=connect-token"
+            assert "X-Access-Token" not in request.headers
+            assert "X-API-Key" not in request.headers
+        finally:
+            await sandbox.close()
 
 
 def test_create_uses_manager_contract() -> None:
@@ -52,7 +99,6 @@ def test_create_uses_manager_contract() -> None:
     assert sandbox._connection.token_expiration == 1789029315
     assert sandbox._connection.tunnel_lifetime == 86400
     assert sandbox._connection.tunnel_expiration == 1788946515
-    assert "envd-token" not in repr(sandbox._connection)
     assert "connect-token" not in repr(sandbox._connection)
 
 
@@ -295,7 +341,7 @@ def test_https_gateway_url_can_override_manager_placeholder(
     connection = SandboxConnection(
         sandbox_id="sbx_123",
         domain="https://sbx_123.sandbox.devbox.local",
-        envd_access_token="token",
+        connect_token="token",
         tunnel_id="aaaadysa",
     )
 
@@ -370,7 +416,6 @@ def connection_response(sandbox_id: str = "sbx_123") -> dict[str, object]:
         "sandboxID": sandbox_id,
         "clientID": "client_1",
         "envdVersion": "1.0.0",
-        "envdAccessToken": "envd-token",
         "domain": "sbx_123.sandbox.devbox.local",
         "sandboxProxyDomain": "devbox.example.test",
         "trafficAccessToken": "traffic-token",

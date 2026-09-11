@@ -1,19 +1,82 @@
 import type { MockAgent } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { DevBox } from "../src/client.js";
-import { ConflictError } from "../src/errors.js";
+import { ConflictError, ProtocolError } from "../src/errors.js";
 import { parseConnection, SandboxState } from "../src/models.js";
-import { mockAgent, sandboxResponse } from "./helpers.js";
+import { connectBody, mockAgent, sandboxResponse } from "./helpers.js";
 
 describe("sandboxes", () => {
   let agent: MockAgent | undefined;
-  afterEach(async () => agent?.close());
+  afterEach(async () => {
+    await agent?.close();
+    agent = undefined;
+  });
+
+  it.each(["", "bad; other=value", "bad\r\nX-Test: value", "bad\n"])(
+    "rejects missing or unsafe connect tokens",
+    async (connectToken) => {
+      agent = mockAgent();
+      agent
+        .get("https://manager.example.test")
+        .intercept({ path: "/sandboxes", method: "POST" })
+        .reply(201, { ...sandboxResponse, connectToken, envdAccessToken: "obsolete-token" });
+      const client = new DevBox({
+        apiKey: "key",
+        apiUrl: "https://manager.example.test",
+        dispatcher: agent,
+      });
+      const sandbox = await client.sandboxes.create();
+      try {
+        await expect(sandbox.files.read("/tmp/proof")).rejects.toBeInstanceOf(ProtocolError);
+      } finally {
+        await sandbox.close();
+        await client.close();
+      }
+    },
+  );
+
+  it("uses the relay cookie for files and streamed commands", async () => {
+    agent = mockAgent();
+    agent
+      .get("https://manager.example.test")
+      .intercept({ path: "/sandboxes", method: "POST" })
+      .reply(201, sandboxResponse);
+    const pool = agent.get("https://runtime.example.test");
+    const headers = { cookie: "relay_token=connect-token", "e2b-sandbox-id": "sbx-1" };
+    pool
+      .intercept({ path: "/files?path=%2Ftmp%2Fproof", method: "GET", headers })
+      .reply(200, "proof");
+    pool
+      .intercept({ path: "/process.Process/Start", method: "POST", headers })
+      .reply(
+        200,
+        connectBody(
+          { value: { event: { start: { pid: 7 } } } },
+          { value: { event: { end: { exitCode: 0 } } } },
+          { value: {}, trailer: true },
+        ),
+        { headers: { "Content-Type": "application/connect+json" } },
+      );
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.create();
+    try {
+      expect(await sandbox.files.read("/tmp/proof")).toBe("proof");
+      expect((await sandbox.commands.run("true")).exitCode).toBe(0);
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await sandbox.close();
+      await client.close();
+    }
+  });
 
   it("parses the manager tunnel connection contract", () => {
     expect(parseConnection(sandboxResponse, "sbx-1")).toEqual({
       sandboxId: "sbx-1",
       domain: "https://runtime.example.test",
-      envdAccessToken: "envd-token",
       tunnelId: "aaaadysa",
       connectToken: "connect-token",
       tokenLifetime: 86_400,

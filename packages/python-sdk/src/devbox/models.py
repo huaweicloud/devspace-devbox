@@ -103,7 +103,6 @@ class SandboxInfo:
 class SandboxConnection:
     sandbox_id: str
     domain: str
-    envd_access_token: str = field(repr=False)
     tunnel_id: str = ""
     connect_token: str = field(default="", repr=False)
     token_lifetime: int | None = None
@@ -117,7 +116,6 @@ class SandboxConnection:
         return cls(
             sandbox_id=sandbox_id,
             domain=_domain(value.get("domain")),
-            envd_access_token=str(value.get("envdAccessToken") or ""),
             tunnel_id=str(value.get("tunnelId") or ""),
             connect_token=str(value.get("connectToken") or ""),
             token_lifetime=_optional_int(value.get("tokenLifetime")),

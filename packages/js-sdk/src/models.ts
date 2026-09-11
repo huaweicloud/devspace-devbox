@@ -72,7 +72,6 @@ export interface SandboxInfo {
 export interface SandboxConnection {
   sandboxId: string;
   domain: string;
-  envdAccessToken: string;
   tunnelId: string;
   connectToken: string;
   tokenLifetime?: number;
@@ -200,7 +199,6 @@ export function parseConnection(value: WireObject, sandboxId: string): SandboxCo
   return {
     sandboxId,
     domain,
-    envdAccessToken: stringValue(value.envdAccessToken ?? ""),
     tunnelId: stringValue(value.tunnelId ?? ""),
     connectToken: stringValue(value.connectToken ?? ""),
     tokenLifetime: optionalNumber(value.tokenLifetime),

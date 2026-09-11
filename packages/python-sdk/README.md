@@ -188,8 +188,8 @@ asyncio.run(main())
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
 | 请求超时 | 构造参数 `request_timeout` | 30 秒 |
 
-构造参数优先于环境变量。API Key 只发送给管理面；Manager 返回的 EnvD 访问令牌只发送给
-数据面。SDK 不持久化 API Key、EnvD 访问令牌或 Connect Token。
+构造参数优先于环境变量。API Key 只发送给管理面；Manager 返回的 `connectToken` 只发送给
+数据面，使用 `Cookie: relay_token=<connectToken>`。SDK 不持久化凭证，也不会跟随重定向发送凭证。
 
 Manager 未直接返回数据面地址的部署可以配置 URL 模板，例如
 `https://{tunnel_id}-{port}.cn-north-4-bridge.myhuaweicloud.com`。
@@ -197,12 +197,12 @@ Manager 未直接返回数据面地址的部署可以配置 URL 模板，例如
 Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Unix 秒过期时间；
 `tunnelExpiration` 是隧道自身的过期时间，两者独立。SDK 在内部保留这些字段，不放入沙箱公开信息或日志。
 `connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token。SDK 当前没有后台续期或
-Token 过期自动重连机制；长期运行前需要服务端先明确凭证更新和数据面鉴权契约。
+Token 过期自动重连机制；获取新的连接凭证需显式调用 `connect()`，由 Manager 保证返回有效凭证。
 
 数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。
-当前已对齐的 Manager 源码仍返回占位 `envdAccessToken`；SDK 沿用 `X-Access-Token`，
-尚未将 `connectToken` 用于 HTTP 鉴权，需确认 Relay Gateway 的 Header 契约后完成。
+所有数据面请求（包括流式命令和文件传输）均使用 Relay Token Cookie 鉴权，
+不使用 `envdAccessToken` 或 `X-Access-Token`。Manager 未返回有效 `connectToken` 时，SDK 拒绝发起数据面请求。
 
 SDK 仅重试连接建立失败，不自动重试限流、服务端错误或可能已经到达服务端的写操作。
 
