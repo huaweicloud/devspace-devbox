@@ -6,6 +6,7 @@ import argparse
 import os
 import runpy
 import socket
+import sys
 from fnmatch import fnmatchcase
 from ipaddress import ip_address
 from pathlib import Path
@@ -15,7 +16,10 @@ from urllib.parse import urlsplit
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("example", choices=("basic", "async_basic", "demo", "validate_full"))
+    parser.add_argument(
+        "example", choices=("basic", "async_basic", "demo", "validate_full", "stability")
+    )
+    parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     original = socket.getaddrinfo
     gateway_ip = os.getenv("DEVBOX_GATEWAY_IP", "").strip()
@@ -40,9 +44,13 @@ def main() -> None:
         # Only DNS changes; the request URL, HTTP Host and TLS SNI stay intact.
         socket.getaddrinfo = resolve
         print(f"Local DNS: {pattern} -> {gateway_ip}", flush=True)
+    original_argv = sys.argv
     try:
-        runpy.run_path(str(Path(__file__).with_name(f"{args.example}.py")), run_name="__main__")
+        script = str(Path(__file__).with_name(f"{args.example}.py"))
+        sys.argv = [script, *args.arguments]
+        runpy.run_path(script, run_name="__main__")
     finally:
+        sys.argv = original_argv
         socket.getaddrinfo = original
 
 

@@ -230,6 +230,7 @@ except DevBoxError as error:
 | `examples/async_basic.py` | 异步入门路径 |
 | `examples/demo.py` | 无交互的核心能力演示 |
 | `examples/validate_full.py` | 创建临时沙箱并执行完整验收 |
+| `examples/stability.py` | 串行批量创建、使用和删除，统计成功率与耗时 |
 
 核心能力演示：
 
@@ -256,6 +257,19 @@ python examples/run_local.py validate_full
 该入口也支持 `basic`、`async_basic`、`demo`。DNS 覆盖仅对当前示例进程和配置的
 Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
 Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
+
+串行稳定性抽样（同样支持本地 Gateway DNS 覆盖）：
+
+```bash
+python examples/run_local.py stability --rounds 20 --checks 3 --interval 2
+```
+
+每轮创建后执行多次命令，核对沙箱 ID、计算结果、文件往返和重连后的数据，再删除沙箱。
+不重复 Git、PTY 等完整功能验收，也不代表多沙箱并发或长时间驻留稳定性测试。
+默认沙箱生命周期 300 秒、单次请求超时 30 秒；可用 `--lifetime`、`--request-timeout` 调整。
+创建成功率以实际尝试次数为分母，使用成功率以创建成功数为分母；耗时显示 min/avg/p50/p95/max，
+创建失败耗时单独统计。每轮详情保存为临时目录中的 JSON，路径在控制台打印，可用 `--report` 指定。
+测试不额外重试；删除失败或创建结果不明时停止新增资源。任一轮失败时进程退出码为 1。
 
 ## 开发验证
 
