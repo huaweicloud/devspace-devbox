@@ -47,7 +47,8 @@
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "prepublishOnly": "npm run check",
     "example": "npm run build && node examples/basic.mjs",
-    "validate": "npm run build && node examples/validate-full.mjs"
+    "validate": "npm run build && node examples/validate-full.mjs",
+    "validate:local": "npm run build && node examples/run-local.mjs validate-full"
   },
   "homepage": "https://github.com/huaweicloud/devspace-devbox/tree/dev/packages/js-sdk#readme",
   "dependencies": {

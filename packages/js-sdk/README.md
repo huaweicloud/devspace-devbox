@@ -192,6 +192,10 @@ npm run validate
 
 `validate` 会创建一个临时沙箱，验证管理面生命周期以及命令、文件、PTY、Git 等数据面能力，最后删除沙箱。模板可通过 `DEVBOX_TEST_TEMPLATE` 覆盖。
 
+本地联调需要指定 Gateway IP 时，设置 `DEVBOX_GATEWAY_IP`，并将 `DEVBOX_GATEWAY_URL`
+配置为 `https://{tunnel_id}-{port}.<gateway-domain>`，运行 `npm run validate:local`。
+此入口仅在当前进程内覆盖匹配域名的 DNS，保留 HTTPS 域名和证书校验，不修改系统 hosts 或 SDK。
+
 ## 开发
 
 ```bash
