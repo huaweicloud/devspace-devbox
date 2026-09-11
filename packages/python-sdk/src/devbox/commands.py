@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Iter
 from typing import Any, Literal, overload
 
 from ._transport import AsyncTransport, SyncTransport
-from .errors import CommandExitError, ProtocolError
+from .errors import CommandExitError, ConfigurationError, ProtocolError
 from .models import CommandResult, OutputChunk, ProcessInfo, PtySize
 
 OutputHandler = Callable[[str], None]
@@ -191,6 +191,7 @@ class Commands:
         pty: PtySize | None = None,
         input_stream: str = "stdin",
     ) -> CommandHandle:
+        headers = _process_headers(user)
         request = dict(body)
         if pty:
             request["pty"] = {"size": {"rows": pty.rows, "cols": pty.cols}}
@@ -198,7 +199,7 @@ class Commands:
             f"{_PROCESS}/Start",
             request,
             timeout=timeout,
-            headers=_process_headers(user),
+            headers=headers,
         )
         try:
             pid = _first_pid(events, "start process")
@@ -421,6 +422,7 @@ class AsyncCommands:
         pty: PtySize | None = None,
         input_stream: str = "stdin",
     ) -> AsyncCommandHandle:
+        headers = _process_headers(user)
         request = dict(body)
         if pty:
             request["pty"] = {"size": {"rows": pty.rows, "cols": pty.cols}}
@@ -429,7 +431,7 @@ class AsyncCommands:
             f"{_PROCESS}/Start",
             request,
             timeout=timeout,
-            headers=_process_headers(user),
+            headers=headers,
         )
         try:
             pid = await _first_pid_async(events, "start process")
@@ -583,11 +585,9 @@ def _command_body(
 
 
 def _process_headers(user: str | None) -> dict[str, str]:
-    headers = {"Keepalive-Ping-Interval": "50"}
-    if user:
-        token = base64.b64encode(f"{user}:".encode()).decode("ascii")
-        headers["Authorization"] = f"Basic {token}"
-    return headers
+    if user is not None:
+        raise ConfigurationError("user switching is not supported by the current EnvD service")
+    return {"Keepalive-Ping-Interval": "50"}
 
 
 def _first_pid(events: Iterator[Mapping[str, Any]], action: str) -> int:

@@ -1,6 +1,7 @@
 import type { MockAgent } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { DevBox } from "../src/client.js";
+import { ConflictError } from "../src/errors.js";
 import { parseConnection, SandboxState } from "../src/models.js";
 import { mockAgent, sandboxResponse } from "./helpers.js";
 
@@ -86,6 +87,29 @@ describe("sandboxes", () => {
 
     expect(sandbox.sandboxId).toBe("sbx-1");
     await client.close();
+  });
+
+  it.each(["already_killed", "another_conflict"])("handles kill conflict %s", async (code) => {
+    agent = mockAgent();
+    const pool = agent.get("https://manager.example.test");
+    pool.intercept({ path: "/sandboxes", method: "POST" }).reply(201, sandboxResponse);
+    pool
+      .intercept({ path: "/sandboxes/sbx-1", method: "DELETE" })
+      .reply(409, { error: code, message: "conflict" });
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      const sandbox = await client.sandboxes.create();
+      if (code === "already_killed") {
+        await expect(sandbox.kill()).resolves.toBe(false);
+        expect(sandbox.info.state).toBe(SandboxState.Stopped);
+      } else await expect(sandbox.kill()).rejects.toBeInstanceOf(ConflictError);
+    } finally {
+      await client.close();
+    }
   });
 
   it("parses pagination headers", async () => {

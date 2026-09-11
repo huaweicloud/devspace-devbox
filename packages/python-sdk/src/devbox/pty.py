@@ -30,7 +30,7 @@ class Pty:
     ) -> CommandHandle:
         """Start an interactive process and return its process handle."""
         size = size or PtySize()
-        environment = {"TERM": "xterm-256color", "LANG": "C.UTF-8", **dict(envs or {})}
+        environment = {"TERM": "xterm-256color", **dict(envs or {})}
         process: dict[str, object] = {
             "cmd": command,
             "args": ["-i", "-l"] if command == "/bin/bash" else [],
@@ -88,7 +88,7 @@ class AsyncPty:
         user: str | None = None,
     ) -> AsyncCommandHandle:
         size = size or PtySize()
-        environment = {"TERM": "xterm-256color", "LANG": "C.UTF-8", **dict(envs or {})}
+        environment = {"TERM": "xterm-256color", **dict(envs or {})}
         process: dict[str, object] = {
             "cmd": command,
             "args": ["-i", "-l"] if command == "/bin/bash" else [],

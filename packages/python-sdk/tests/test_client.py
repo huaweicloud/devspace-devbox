@@ -10,6 +10,7 @@ import pytest
 from devbox import (
     AsyncDevBox,
     ConfigurationError,
+    ConflictError,
     DevBox,
     ProtocolError,
     RateLimitError,
@@ -74,6 +75,38 @@ def test_connect_reads_latest_manager_connection() -> None:
         assert sandbox._connection.connect_token == "connect-token"
         assert sandbox._connection.token_expiration == 1789029315
         sandbox.close()
+
+
+@pytest.mark.parametrize("code", ["already_killed", "another_conflict"])
+def test_kill_handles_only_already_killed_conflict(code: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(409, json={"error": code, "message": "conflict"})
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        if code == "already_killed":
+            assert sandbox.kill() is False
+            assert sandbox.info.state is SandboxState.STOPPED
+        else:
+            with pytest.raises(ConflictError):
+                sandbox.kill()
+
+
+@pytest.mark.asyncio
+async def test_async_kill_handles_expired_sandbox() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(409, json={"error": "already_killed", "message": "already killed"})
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        assert await sandbox.kill() is False
+        assert sandbox.info.state is SandboxState.STOPPED
 
 
 def test_v2_list_reads_pagination_headers() -> None:
@@ -266,7 +299,10 @@ def test_https_gateway_url_can_override_manager_placeholder(
         tunnel_id="aaaadysa",
     )
 
-    assert _gateway_url(connection, config.gateway_url) == "https://aaaadysa-49983.gateway.example.test"
+    assert (
+        _gateway_url(connection, config.gateway_url)
+        == "https://aaaadysa-49983.gateway.example.test"
+    )
 
 
 def test_gateway_url_override_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:

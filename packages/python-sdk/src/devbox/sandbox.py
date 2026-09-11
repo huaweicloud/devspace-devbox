@@ -11,7 +11,7 @@ from uuid import uuid4
 from ._transport import AsyncTransport, SyncTransport
 from .commands import AsyncCommands, Commands
 from .config import ConnectionConfig
-from .errors import DevBoxError, NotFoundError, ProtocolError
+from .errors import ConflictError, DevBoxError, NotFoundError, ProtocolError
 from .filesystem import AsyncFilesystem, Filesystem
 from .git import AsyncGit, Git
 from .models import (
@@ -375,7 +375,7 @@ class Sandbox:
         )
 
     def refresh(self, duration: int = 300) -> None:
-        """Extend the sandbox lifetime by the requested number of seconds."""
+        """Reset expiration to now plus duration seconds, not add to the previous deadline."""
         self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
@@ -386,7 +386,9 @@ class Sandbox:
         """Delete the sandbox, returning whether it still existed."""
         try:
             self._control.request("DELETE", f"/sandboxes/{_id(self.sandbox_id)}")
-        except NotFoundError:
+        except (NotFoundError, ConflictError) as error:
+            if isinstance(error, ConflictError) and error.code != "already_killed":
+                raise
             self._info = replace(self._info, state=SandboxState.STOPPED)
             return False
         finally:
@@ -601,6 +603,7 @@ class AsyncSandbox:
         )
 
     async def refresh(self, duration: int = 300) -> None:
+        """Reset expiration to now plus duration seconds, not add to the previous deadline."""
         await self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
@@ -611,7 +614,9 @@ class AsyncSandbox:
         """Delete the sandbox, returning whether it still existed."""
         try:
             await self._control.request("DELETE", f"/sandboxes/{_id(self.sandbox_id)}")
-        except NotFoundError:
+        except (NotFoundError, ConflictError) as error:
+            if isinstance(error, ConflictError) and error.code != "already_killed":
+                raise
             self._info = replace(self._info, state=SandboxState.STOPPED)
             return False
         finally:

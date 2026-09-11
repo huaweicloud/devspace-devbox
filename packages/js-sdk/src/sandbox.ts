@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dispatcher } from "undici";
 import { Commands } from "./commands.js";
 import { type ConnectionConfig, type DevBoxOptions, resolveConfig } from "./config.js";
-import { NotFoundError, ProtocolError } from "./errors.js";
+import { ConflictError, NotFoundError, ProtocolError } from "./errors.js";
 import { Filesystem } from "./filesystem.js";
 import { Git } from "./git.js";
 import { Transport } from "./internal/transport.js";
@@ -235,6 +235,7 @@ export class Sandbox {
     });
   }
 
+  /** Reset expiration to now plus duration seconds, not add to the previous deadline. */
   async refresh(duration = 300): Promise<void> {
     await this.#control.request("POST", `/sandboxes/${identifier(this.sandboxId)}/refreshes`, {
       json: { duration: checkedTimeout(duration) },
@@ -245,7 +246,11 @@ export class Sandbox {
     try {
       await this.#control.request("DELETE", `/sandboxes/${identifier(this.sandboxId)}`);
     } catch (error) {
-      if (!(error instanceof NotFoundError)) throw error;
+      if (
+        !(error instanceof NotFoundError) &&
+        !(error instanceof ConflictError && error.code === "already_killed")
+      )
+        throw error;
       this.#info = { ...this.#info, state: SandboxState.Stopped };
       return false;
     } finally {

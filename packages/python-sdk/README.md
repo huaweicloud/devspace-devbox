@@ -71,6 +71,7 @@ with Sandbox.create("default", timeout=300) as sandbox:
 
 离开 `with` 代码块时，SDK 会删除临时沙箱并关闭本地连接。需要保留沙箱时不要使用
 `with`，完成操作后调用 `sandbox.close()`；需要立即删除时调用 `sandbox.kill()`。
+`kill()` 在沙箱已经删除或自然过期时返回 `False`，可以用于重复清理。
 
 ## 核心方法
 
@@ -85,6 +86,9 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
 
 沙箱生命周期、命令和 Git 操作中的 `timeout`、`duration` 均以秒为单位。
+`set_timeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
+不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect(timeout=...)` 续期。
+`is_running()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。
 
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
 `sandbox.files.make_dir()`，而不是 `sandbox.make_dir()`。
@@ -97,6 +101,9 @@ PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目
 result = sandbox.commands.run("python --version")
 print(result.exit_code, result.stdout, result.stderr)
 ```
+
+命令使用沙箱配置的默认系统用户。当前 EnvD 不支持切换用户，显式传入 `user` 会抛出
+`ConfigurationError`，不会静默以默认用户执行。
 
 后台命令返回 `CommandHandle`，可以继续输入、发送信号或等待结果：
 
@@ -135,6 +142,9 @@ session.send_stdin("exit\n")
 result = session.wait(check=False)
 print(result.stdout)
 ```
+
+PTY 继承沙箱的语言环境，不强制设置镜像可能未安装的 locale；需要覆盖时通过 `envs` 传入。
+`exit` 结束远端终端进程，`disconnect()` 只断开输出流。`wait()` 已返回退出结果后，句柄不再接受输入。
 
 ## 管理多个沙箱
 
@@ -186,7 +196,8 @@ Manager 未直接返回数据面地址的部署可以配置 URL 模板，例如
 
 Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Unix 秒过期时间；
 `tunnelExpiration` 是隧道自身的过期时间，两者独立。SDK 在内部保留这些字段，不放入沙箱公开信息或日志。
-`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token，也不会自动续期。
+`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token。SDK 当前没有后台续期或
+Token 过期自动重连机制；长期运行前需要服务端先明确凭证更新和数据面鉴权契约。
 
 数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。

@@ -2,9 +2,10 @@ import { Buffer } from "node:buffer";
 import type { MockAgent } from "undici";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { type CommandHandle, Commands, type RunOptions } from "../src/commands.js";
-import { CommandExitError } from "../src/errors.js";
+import { CommandExitError, ConfigurationError } from "../src/errors.js";
 import { Transport } from "../src/internal/transport.js";
 import type { CommandResult } from "../src/models.js";
+import { Pty } from "../src/pty.js";
 import { connectBody, mockAgent } from "./helpers.js";
 
 describe("Commands", () => {
@@ -20,6 +21,53 @@ describe("Commands", () => {
     expectTypeOf(background).returns.toEqualTypeOf<Promise<CommandHandle>>();
     expectTypeOf(dynamic).returns.toEqualTypeOf<Promise<CommandResult | CommandHandle>>();
   });
+
+  it("rejects unsupported user switching before starting a process", async () => {
+    const provide = vi.fn(async (): Promise<Transport> => {
+      throw new Error("unexpected transport");
+    });
+    const commands = new Commands(provide);
+    await expect(commands.run("id", { user: "nobody" })).rejects.toBeInstanceOf(ConfigurationError);
+    await expect(
+      new Pty(commands, provide).start("/bin/bash", { user: "nobody" }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
+    expect(provide).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, { LANG: "C", TERM: "dumb" }])(
+    "does not force a terminal locale",
+    async (envs) => {
+      agent = mockAgent();
+      agent
+        .get("https://runtime.example.test")
+        .intercept({ path: "/process.Process/Start", method: "POST" })
+        .reply(({ body }) => {
+          const payload = JSON.parse(
+            Buffer.from(body as Uint8Array)
+              .subarray(5)
+              .toString(),
+          );
+          expect(payload.process.envs).toEqual({ TERM: "xterm-256color", ...envs });
+          return {
+            statusCode: 200,
+            data: connectBody(
+              { value: { event: { start: { pid: 7 } } } },
+              { value: { event: { end: { exitCode: 0 } } } },
+              { value: {}, trailer: true },
+            ),
+            responseOptions: { headers: { "Content-Type": "application/connect+json" } },
+          };
+        });
+      const transport = new Transport("https://runtime.example.test", { dispatcher: agent });
+      try {
+        const provide = async () => transport;
+        const session = await new Pty(new Commands(provide), provide).start("/bin/bash", { envs });
+        expect((await session.wait()).exitCode).toBe(0);
+      } finally {
+        await transport.close();
+      }
+    },
+  );
 
   it("collects stdout and stderr from the same event", async () => {
     agent = mockAgent();

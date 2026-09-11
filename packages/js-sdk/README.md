@@ -62,6 +62,7 @@ try {
 ```
 
 `kill()` 删除远端沙箱，`close()` 只释放本地连接。需要保留沙箱时只调用 `close()`。
+`kill()` 在沙箱已经删除或自然过期时返回 `false`，可以用于重复清理。
 
 ## 核心方法
 
@@ -77,6 +78,9 @@ try {
 
 沙箱生命周期的 `timeout`、`duration` 以秒为单位；命令、Git 和请求配置中的
 `timeoutMs`、`requestTimeoutMs` 以毫秒为单位。
+`setTimeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
+不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect` 的 `timeout` 选项续期。
+`isRunning()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。
 
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
 `sandbox.files.makeDir()`，而不是 `sandbox.makeDir()`。
@@ -100,6 +104,8 @@ const result = await process.wait();
 `sandbox.commands.connect(process.pid)` 重新连接；重连只接收新输出，不回放断开期间的内容。
 
 非零退出码默认抛出 `CommandExitError`。使用 `{ check: false }` 可以直接读取退出结果。
+命令使用沙箱配置的默认系统用户。当前 EnvD 不支持切换用户，显式传入 `user` 会抛出
+`ConfigurationError`，不会静默以默认用户执行。
 
 ## 文件监听
 
@@ -125,6 +131,9 @@ await session.sendStdin("exit\n");
 const result = await session.wait({ check: false });
 console.log(result.stdout);
 ```
+
+PTY 继承沙箱的语言环境，不强制设置镜像可能未安装的 locale；需要覆盖时通过 `envs` 传入。
+`exit` 结束远端终端进程，`disconnect()` 只断开输出流。`wait()` 已返回退出结果后，句柄不再接受输入。
 
 ## 管理多个沙箱
 
@@ -157,7 +166,8 @@ Manager 未直接返回数据面地址的部署可以设置 URL 模板，例如 
 
 Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Unix 秒过期时间；
 `tunnelExpiration` 是隧道自身的过期时间，两者独立。SDK 在内部保留这些字段，不放入沙箱公开信息或日志。
-`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token，也不会自动续期。
+`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token。SDK 当前没有后台续期或
+Token 过期自动重连机制；长期运行前需要服务端先明确凭证更新和数据面鉴权契约。
 
 数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。

@@ -25,7 +25,7 @@ export class Pty {
     const process: Record<string, unknown> = {
       cmd: command,
       args: command === "/bin/bash" ? ["-i", "-l"] : [],
-      envs: { TERM: "xterm-256color", LANG: "C.UTF-8", ...options.envs },
+      envs: { TERM: "xterm-256color", ...options.envs },
     };
     if (options.cwd) process.cwd = options.cwd;
     return this.#commands.start(

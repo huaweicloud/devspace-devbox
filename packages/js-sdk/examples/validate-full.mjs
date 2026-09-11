@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,9 +33,10 @@ console.log(`DevBox full validation | template=${template}`);
 try {
   section("Create sandbox", `Start template=${template}, timeout=300s, with an isolated runtime`);
   sandbox = await validator.verify("sandbox.create", () =>
-    step("sandboxes.create()", () =>
+    step("sandboxes.create(envs={DEVBOX_SDK_ENV: 'created-731'})", () =>
       client.sandboxes.create(template, {
         timeout: 300,
+        envs: { DEVBOX_SDK_ENV: "created-731" },
         metadata: { sdk_validation: "javascript" },
       }),
     ),
@@ -95,9 +97,19 @@ async function validateSandbox(client, sandbox, validator) {
       await step("connected.close() | keep the remote sandbox running", () => connected.close());
     }
   });
-  await validator.verify("manager.refresh", () =>
-    step("sandbox.refresh(300) | extend lifetime by 300s", () => sandbox.refresh(300)),
-  );
+  await validator.verify("manager.refresh", async () => {
+    const before = Date.now();
+    await step("sandbox.refresh(300) | reset deadline to now + 300s", () => sandbox.refresh(300));
+    const info = await step("sandbox.getInfo() | verify the actual deadline", () =>
+      sandbox.getInfo(),
+    );
+    if (
+      !info.endAt ||
+      info.endAt.getTime() < before + 295_000 ||
+      info.endAt.getTime() > Date.now() + 305_000
+    )
+      throw new Error(`refresh did not reset the deadline: ${info.endAt}`);
+  });
   await validator.verify("manager.metrics", () =>
     step("sandbox.getMetrics()", () => sandbox.getMetrics()),
   );
@@ -108,6 +120,20 @@ async function validateSandbox(client, sandbox, validator) {
   if (!runtime) {
     console.log("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable");
   } else {
+    const gatewayUrl = process.env.DEVBOX_GATEWAY_URL;
+    if (gatewayUrl && !gatewayUrl.includes("{tunnel_id}")) {
+      console.log("SKIP runtime.environment: fixed gateway is independent of the created sandbox");
+    } else {
+      await validator.verify("runtime.environment", async () => {
+        const command = 'printf "%s|%s" "$DEVBOX_ID" "$DEVBOX_SDK_ENV"';
+        const result = await step(
+          `commands.run(${JSON.stringify(command)}) | verify sandbox identity and create-time environment`,
+          () => sandbox.commands.run(command),
+        );
+        equal(result.stdout, `${sandbox.sandboxId}|created-731`);
+        equal(result.stderr, "");
+      });
+    }
     await validateRuntime(sandbox, validator);
   }
 }
@@ -144,6 +170,13 @@ async function validateRuntime(sandbox, validator) {
     );
     equal(result.stdout, "command-ok");
     equal(result.stderr, "error-ok");
+    const failed = await step(
+      "commands.run('printf partial; printf deliberate >&2; exit 7', check=false)",
+      () => sandbox.commands.run("printf partial; printf deliberate >&2; exit 7", { check: false }),
+    );
+    equal(failed.exitCode, 7);
+    equal(failed.stdout, "partial");
+    equal(failed.stderr, "deliberate");
   });
 
   await validator.verify("commands.background", async () => {
@@ -185,6 +218,28 @@ async function validateRuntime(sandbox, validator) {
     );
   });
 
+  await validator.verify("commands.reconnect", async () => {
+    const process = await step(
+      "commands.run('read line; printf reconnected:%s \"$line\"', background=true, stdin=true)",
+      () =>
+        sandbox.commands.run('read line; printf reconnected:%s "$line"', {
+          background: true,
+          stdin: true,
+          timeoutMs: 10_000,
+        }),
+    );
+    await step("process.disconnect() | remote process stays alive", () => process.disconnect());
+    const attached = await step(`commands.connect(${process.pid})`, () =>
+      sandbox.commands.connect(process.pid, { timeoutMs: 10_000 }),
+    );
+    await step("attached.sendStdin('proof-731\\n')", () => attached.sendStdin("proof-731\n"));
+    const result = await step("attached.wait() | verify output after reconnect", () =>
+      attached.wait(),
+    );
+    equal(result.stdout, "reconnected:proof-731");
+    equal(result.stderr, "");
+  });
+
   section("Files", "Create, read, inspect, move, upload, download and remove files");
   await validator.verify("filesystem", async () => {
     const root = "/tmp/devbox-sdk-test";
@@ -212,6 +267,17 @@ async function validateRuntime(sandbox, validator) {
   });
 
   await validator.verify("filesystem.uploadDownload", async () => {
+    const binary = Buffer.alloc(1024 * 1024);
+    for (let i = 0; i < binary.length; i++) binary[i] = i % 256;
+    await step("files.write(/tmp/binary.dat, <1 MiB binary data>)", () =>
+      sandbox.files.write("/tmp/binary.dat", binary),
+    );
+    const downloaded = await step("files.readBytes(/tmp/binary.dat)", () =>
+      sandbox.files.readBytes("/tmp/binary.dat"),
+    );
+    equal(Buffer.from(downloaded).equals(binary), true);
+    console.log(`    verified ${binary.length} bytes, including NUL and non-UTF-8 bytes`);
+    await sandbox.files.remove("/tmp/binary.dat");
     const directory = await mkdtemp(join(tmpdir(), "devbox-js-"));
     try {
       const source = join(directory, "source.txt");
@@ -241,20 +307,33 @@ async function validateRuntime(sandbox, validator) {
     await step(`pty.resize(pid=${session.pid}, rows=30, cols=100)`, () =>
       sandbox.pty.resize(session.pid, { rows: 30, cols: 100 }),
     );
-    await step("session.sendStdin('printf pty-ok\\nexit\\n')", () =>
-      session.sendStdin("printf pty-ok\nexit\n"),
+    const command = "printf '\\n__PTY_%s__\\n' \"$((19+23))\"; stty size; exit 7\n";
+    await step(
+      `session.sendStdin(${JSON.stringify(command)}) | compute 42, inspect size, exit with code 7`,
+      () => session.sendStdin(command),
     );
     const result = await step("session.wait() | read terminal output until Bash exits", () =>
       session.wait({ check: false }),
     );
-    equal(result.exitCode, 0);
-    equal(result.stdout.includes("pty-ok"), true);
+    equal(result.exitCode, 7);
+    const lines = result.stdout.replaceAll("\r", "").split("\n");
+    equal(lines.includes("__PTY_42__"), true);
+    equal(lines.includes("30 100"), true);
+    let rejected = false;
+    try {
+      await session.sendStdin("must-not-run\n");
+    } catch (error) {
+      if (!error.message.includes("already completed")) throw error;
+      rejected = true;
+    }
+    equal(rejected, true);
+    console.log("    completed session rejects further input");
   });
 
   section("Git", "Initialize a repository, configure an author, stage and commit a file");
   await validator.verify("git", async () => {
     const repository = "/tmp/devbox-sdk-git";
-    const command = `rm -rf ${repository}; mkdir -p ${repository}; git -C ${repository} init`;
+    const command = `mkdir -p ${repository} && git -C ${repository} init -b main`;
     await step(`commands.run(${JSON.stringify(command)})`, () => sandbox.commands.run(command));
     await step("git.setConfig(user.name='DevBox SDK')", () =>
       sandbox.git.setConfig(repository, "user.name", "DevBox SDK"),
@@ -267,13 +346,19 @@ async function validateRuntime(sandbox, validator) {
     );
     await step("git.add() | stage changes", () => sandbox.git.add(repository));
     await step("git.commit('test commit')", () => sandbox.git.commit(repository, "test commit"));
+    const committed = await step(
+      "git show HEAD:README.md | verify committed content, not just exit code",
+      () => sandbox.commands.run(`git -C ${repository} show HEAD:README.md`),
+    );
+    equal(committed.stdout, "test\n");
+    equal(committed.stderr, "");
     equal(
       (
         await step("git.status() | expect a clean working tree", () =>
           sandbox.git.status(repository),
         )
-      ).stdout.includes("README.md"),
-      false,
+      ).stdout.trim(),
+      "## main",
     );
     await step(`files.remove(${repository})`, () => sandbox.files.remove(repository));
   });

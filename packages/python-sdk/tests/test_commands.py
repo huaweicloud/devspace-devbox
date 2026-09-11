@@ -8,9 +8,10 @@ from typing import Any, Literal, cast
 import httpx
 import pytest
 
-from devbox import CommandExitError, CommandResult, ProtocolError
+from devbox import CommandExitError, CommandResult, ConfigurationError, ProtocolError
 from devbox._transport import AsyncTransport, SyncTransport
 from devbox.commands import AsyncCommands, CommandHandle, Commands
+from devbox.pty import AsyncPty, Pty
 
 
 def test_command_uses_envd_connect_protocol() -> None:
@@ -48,6 +49,57 @@ def test_command_uses_envd_connect_protocol() -> None:
     assert output == ["hello ", "world\n"]
     assert requests[0].headers["Content-Type"] == "application/connect+json"
     assert requests[0].headers["Connect-Protocol-Version"] == "1"
+
+
+@pytest.mark.parametrize("envs", [None, {"LANG": "C", "TERM": "dumb"}])
+def test_pty_preserves_runtime_locale(envs: dict[str, str] | None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _request_frame(request)
+        assert body["process"]["envs"] == {"TERM": "xterm-256color", **(envs or {})}
+        return _stream_response(
+            {"event": {"start": {"pid": 7}}}, {"event": {"end": {"exitCode": 0}}}
+        )
+
+    with _transport(handler) as transport:
+        commands = Commands(lambda: transport)
+        assert Pty(commands, lambda: transport).start(envs=envs).wait().exit_code == 0
+
+
+def test_user_switching_is_not_silently_ignored() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("unsupported user must not start a process")
+
+    with _transport(handler) as transport:
+        commands = Commands(lambda: transport)
+        with pytest.raises(ConfigurationError, match="user switching"):
+            commands.run("id", user="nobody")
+        with pytest.raises(ConfigurationError, match="user switching"):
+            Pty(commands, lambda: transport).start(user="nobody")
+
+
+@pytest.mark.asyncio
+async def test_async_pty_locale_and_user_switching() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert _request_frame(request)["process"]["envs"] == {"TERM": "xterm-256color"}
+        return _stream_response(
+            {"event": {"start": {"pid": 7}}}, {"event": {"end": {"exitCode": 0}}}
+        )
+
+    transport = AsyncTransport(
+        "https://envd.test", headers={}, timeout=30, transport=httpx.MockTransport(handler)
+    )
+
+    async def provide() -> AsyncTransport:
+        return transport
+
+    try:
+        pty = AsyncPty(AsyncCommands(provide), provide)
+        handle = await pty.start()
+        assert (await handle.wait()).exit_code == 0
+        with pytest.raises(ConfigurationError, match="user switching"):
+            await pty.start(user="nobody")
+    finally:
+        await transport.close()
 
 
 def test_nonzero_command_raises_with_result() -> None:

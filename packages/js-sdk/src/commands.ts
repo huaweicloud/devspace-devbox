@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { CommandExitError, ProtocolError } from "./errors.js";
+import { CommandExitError, ConfigurationError, ProtocolError } from "./errors.js";
 import type { ConnectStream, Transport } from "./internal/transport.js";
 import { numberValue, objectValue, pick, pickOr, type WireObject } from "./internal/wire.js";
 import {
@@ -194,6 +194,8 @@ export class Commands {
       inputStream?: "stdin" | "pty";
     },
   ): Promise<CommandHandle> {
+    if (options.user !== undefined)
+      throw new ConfigurationError("user switching is not supported by the current EnvD service");
     const request = { ...body };
     if (options.pty) {
       if (options.pty.rows < 1 || options.pty.cols < 1)
@@ -202,8 +204,6 @@ export class Commands {
     }
     const transport = await this.#transport();
     const headers: Record<string, string> = { "Keepalive-Ping-Interval": "50" };
-    if (options.user)
-      headers.Authorization = `Basic ${Buffer.from(`${options.user}:`).toString("base64")}`;
     const stream = transport.connectStream(
       `${PROCESS}/Start`,
       request,

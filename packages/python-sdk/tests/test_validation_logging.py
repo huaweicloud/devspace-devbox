@@ -51,3 +51,12 @@ def test_command_output_is_bounded(capsys: pytest.CaptureFixture[str]) -> None:
     assert "truncated (5000 characters total)" in output
     assert "(empty)" in output
     assert "x" * 4001 not in output
+
+
+def test_terminal_validation_rejects_input_echo_without_execution() -> None:
+    echoed = "printf '__PTY_42__'; stty size\r\n"
+    with pytest.raises(AssertionError):
+        example["_validate_terminal_result"](CommandResult(exit_code=7, stdout=echoed))
+    example["_validate_terminal_result"](
+        CommandResult(exit_code=7, stdout="prompt\r\n__PTY_42__\r\n30 100\r\n")
+    )
