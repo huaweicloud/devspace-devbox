@@ -3,11 +3,21 @@ from __future__ import annotations
 import runpy
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock
 
+import httpx
 import pytest
 
-from devbox import CommandResult, DevBox, RequestTimeoutError, ServiceUnavailableError
+from devbox import (
+    CommandResult,
+    DevBox,
+    NotFoundError,
+    RequestTimeoutError,
+    SandboxState,
+    ServiceUnavailableError,
+)
+from devbox._transport import SyncTransport
 
 example = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "stability.py"))
 
@@ -102,3 +112,60 @@ def test_local_runner_forwards_arguments_and_restores_them(monkeypatch: pytest.M
     with pytest.raises(RuntimeError, match="script failed"):
         runner["main"]()
     assert sys.argv is arguments
+
+
+def test_http_failure_records_response_without_token(capsys: pytest.CaptureFixture[str]) -> None:
+    row = example["Round"](1)
+    transport = SyncTransport(
+        "https://runtime.test",
+        headers={"Cookie": "relay_token=secret-jwt"},
+        timeout=1,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                404, text="tunnel not found secret-jwt", headers={"X-Request-ID": "server-id"}
+            )
+        ),
+    )
+    sandbox = SimpleNamespace(
+        _gateway_transport=lambda: transport,
+        _connection=SimpleNamespace(connect_token="secret-jwt"),
+    )
+    try:
+        example["capture_http_failures"](row, sandbox)
+        with pytest.raises(NotFoundError):
+            transport.request("GET", "/files?hidden=value")
+        detail = row.http_failures[0]
+        assert detail["body"] == "tunnel not found [REDACTED]"
+        assert detail["url"] == "https://runtime.test/files"
+        assert detail["request_id"] == "server-id"
+        assert detail["client_request_id"].startswith("sdk-stability-")
+        assert "secret-jwt" not in capsys.readouterr().out
+    finally:
+        transport.close()
+
+
+def test_recovery_probe_does_not_turn_failed_round_into_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    row = example["Round"](1)
+    sandbox = Mock()
+    sandbox.sandbox_id = "sb1"
+    sandbox._connection.tunnel_id = "t1"
+    sandbox._gateway_transport.return_value._client.event_hooks = {"request": [], "response": []}
+    sandbox.commands.run.side_effect = [
+        NotFoundError("missing", status_code=404),
+        CommandResult(stdout="sb1|42", exit_code=0),
+    ]
+    sandbox.get_info.return_value = SimpleNamespace(state=SandboxState.RUNNING, end_at=None)
+    sandbox.kill.return_value = True
+    client = Mock()
+    client.sandboxes.create.return_value = sandbox
+    example["run_round"](
+        client, row, run_id="r1", template="default", lifetime=300, checks=1, request_timeout=1
+    )
+    assert not row.use_ok
+    assert not row.phases["command.1"].ok
+    assert row.phases["diagnostic.command"].ok
+    assert example["summarize"]([row])["use_failed"] == 1
+    sandbox.kill.assert_called_once()

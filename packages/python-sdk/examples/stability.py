@@ -10,11 +10,14 @@ import statistics
 import tempfile
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypeVar, cast
 from uuid import uuid4
+
+import httpx
 
 from devbox import DevBox, DevBoxError, Sandbox
 from devbox.config import ConnectionConfig
@@ -38,6 +41,53 @@ class Round:
     phases: dict[str, Phase] = field(default_factory=dict)
     use_ok: bool = False
     stop_reason: str = ""
+    http_failures: list[dict[str, object]] = field(default_factory=list)
+
+
+def capture_http_failures(row: Round, sandbox: Sandbox) -> None:
+    gateway = sandbox._gateway_transport()._client
+
+    def identify(request: httpx.Request) -> None:
+        request.headers["X-Request-ID"] = f"sdk-stability-{uuid4().hex}"
+
+    def capture(response: httpx.Response) -> None:
+        if response.status_code < 400:
+            return
+        body = response.read().decode("utf-8", errors="replace")
+        token = sandbox._connection.connect_token
+        if token:
+            body = body.replace(token, "[REDACTED]")
+        detail: dict[str, object] = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "method": response.request.method,
+            "url": str(response.request.url.copy_with(query=None)),
+            "status": response.status_code,
+            "body": body[:512],
+            "content_type": response.headers.get("Content-Type"),
+            "server": response.headers.get("Server"),
+            "request_id": response.headers.get("X-Request-ID"),
+            "client_request_id": response.request.headers.get("X-Request-ID"),
+        }
+        row.http_failures.append(detail)
+        print(f"  HTTP FAILURE {json.dumps(detail)}", flush=True)
+
+    gateway.event_hooks["request"].append(identify)
+    gateway.event_hooks["response"].append(capture)
+
+
+def diagnose_not_found(row: Round, sandbox: Sandbox, timeout: float) -> None:
+    def state() -> str:
+        info = sandbox.get_info()
+        return f"state={info.state.value} end_at={info.end_at}"
+
+    print(
+        "  DIAGNOSTIC 404: inspect state, then probe once after 1s; round stays failed", flush=True
+    )
+    with suppress(Exception):
+        measure(row, "diagnostic.state", state)
+    time.sleep(1)
+    with suppress(Exception):
+        measure(row, "diagnostic.command", lambda: command_probe(sandbox, timeout))
 
 
 def measure(row: Round, name: str, action: Callable[[], T]) -> T:
@@ -77,6 +127,7 @@ def file_probe(sandbox: Sandbox, path: str, content: bytes) -> str:
 def reconnect_probe(client: DevBox, row: Round, path: str, content: bytes, timeout: float) -> str:
     attached = client.sandboxes.connect(row.sandbox_id)
     try:
+        capture_http_failures(row, attached)
         command_probe(attached, timeout)
         if attached.files.read_bytes(path) != content:
             raise AssertionError("file content changed after reconnect")
@@ -109,6 +160,7 @@ def run_round(
         row.sandbox_id = sandbox.sandbox_id
         row.tunnel_id = sandbox._connection.tunnel_id
         print(f"  sandbox_id={row.sandbox_id} tunnel_id={row.tunnel_id}", flush=True)
+        capture_http_failures(row, sandbox)
         for index in range(checks):
             measure(row, f"command.{index + 1}", lambda: command_probe(sandbox, request_timeout))
             if index + 1 < checks:
@@ -122,6 +174,8 @@ def run_round(
         )
         row.use_ok = True
     except Exception as error:
+        if sandbox is not None and isinstance(error, DevBoxError) and error.status_code == 404:
+            diagnose_not_found(row, sandbox, request_timeout)
         if sandbox is None and (not isinstance(error, DevBoxError) or error.status_code is None):
             row.stop_reason = "create outcome unknown; inspect this run's metadata before retrying"
     finally:
