@@ -27,7 +27,7 @@ npm install devbox-js-sdk
 从仓库源码安装：
 
 ```bash
-npm install ./packages/js-sdk
+npm install ./js-sdk
 ```
 
 设置管理面签发的 API Key：

@@ -31,7 +31,7 @@ dev = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/huaweicloud/devspace-devbox/tree/dev/packages/python-sdk#readme"
+Documentation = "https://github.com/huaweicloud/devspace-devbox/tree/dev/python-sdk#readme"
 Repository = "https://github.com/huaweicloud/devspace-devbox"
 
 [tool.setuptools]

@@ -7,23 +7,23 @@ DevBox 为云端隔离沙箱提供 Python 和 JavaScript/TypeScript SDK。两套
 ## 项目结构
 
 ```text
-packages/
+./
 ├── python-sdk/   Python SDK
 └── js-sdk/       JavaScript / TypeScript SDK
 ```
 
 每个 SDK 独立维护依赖、测试、构建配置和使用文档：
 
-- [Python SDK](packages/python-sdk/README.md)
-- [JavaScript SDK](packages/js-sdk/README.md)
+- [Python SDK](python-sdk/README.md)
+- [JavaScript SDK](js-sdk/README.md)
 
 ## 安装
 
 从仓库检出代码后安装：
 
 ```bash
-python -m pip install ./packages/python-sdk
-npm install ./packages/js-sdk
+python -m pip install ./python-sdk
+npm install ./js-sdk
 ```
 
 发布到语言包仓库后安装：
@@ -63,8 +63,8 @@ try {
 ## 开发验证
 
 ```bash
-cd packages/python-sdk && python -m pip install -e ".[dev]" && ruff check . && mypy && pytest
-cd packages/js-sdk && npm ci && npm run check
+cd python-sdk && python -m pip install -e ".[dev]" && ruff check . && mypy && pytest
+cd js-sdk && npm ci && npm run check
 ```
 
 ## 贡献
