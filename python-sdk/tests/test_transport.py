@@ -7,9 +7,42 @@ import httpx
 import pytest
 
 import devbox._transport as transport_module
-from devbox import ProtocolError, ServiceUnavailableError
+from devbox import ProtocolError, RequestTimeoutError, ServiceUnavailableError
 from devbox._transport import AsyncTransport, SyncTransport
 from devbox.config import gateway_verify_tls
+from devbox.errors import transport_error
+
+
+@pytest.mark.parametrize(
+    ("source_type", "mapped_type"),
+    [
+        (httpx.ConnectError, ServiceUnavailableError),
+        (httpx.ReadError, ServiceUnavailableError),
+        (httpx.ConnectTimeout, RequestTimeoutError),
+        (httpx.ReadTimeout, RequestTimeoutError),
+    ],
+)
+def test_transport_error_identifies_category_without_raw_details(
+    source_type: type[httpx.HTTPError], mapped_type: type[Exception]
+) -> None:
+    error = source_type("private-host?token=secret")
+    mapped = transport_error(error)
+    assert isinstance(mapped, mapped_type)
+    assert source_type.__name__ in str(mapped)
+    assert "private-host" not in str(mapped)
+    assert "secret" not in str(mapped)
+
+
+def test_transport_preserves_original_cause(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transport_module, "_CONNECT_RETRY_DELAYS", ())
+    source = httpx.ConnectError("certificate verification failed")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise source
+
+    with _transport(handler) as transport, pytest.raises(ServiceUnavailableError) as caught:
+        transport.request("GET", "/sandboxes")
+    assert caught.value.__cause__ is source
 
 
 @pytest.mark.parametrize("value", ["true", "1", "yes", "on", " TRUE "])
