@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import time
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
@@ -44,6 +46,8 @@ class Validator:
                 f"FAIL {name} | {_seconds(started_at)}s | {type(error).__name__}: {error}",
                 flush=True,
             )
+            if error.__cause__ is not None:
+                traceback.print_exception(type(error), error, error.__traceback__, file=sys.stdout)
             return None
         print(f"PASS {name} | {_seconds(started_at)}s", flush=True)
         return result

@@ -5,9 +5,25 @@ from pathlib import Path
 
 import pytest
 
-from devbox import CommandExitError, CommandResult
+from devbox import CommandExitError, CommandResult, ServiceUnavailableError
 
 example = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "validate_full.py"))
+
+
+def test_failure_shows_cause(capsys: pytest.CaptureFixture[str]) -> None:
+    def operation() -> None:
+        try:
+            raise OSError("certificate verify failed")
+        except OSError as error:
+            raise ServiceUnavailableError("unable to reach DevBox service") from error
+
+    validator = example["Validator"]()
+    validator.verify("runtime.ready", operation)
+    output = capsys.readouterr().out
+    assert "FAIL runtime.ready" in output
+    assert "OSError: certificate verify failed" in output
+    assert "Traceback" in output
+    assert validator.failures == ["runtime.ready"]
 
 
 def test_step_prints_command_output_and_preserves_result(
