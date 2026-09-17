@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import AsyncGenerator, Generator, Iterator, Mapping
 from typing import Any
@@ -20,6 +21,11 @@ _CONNECT_HEADERS = {
 QueryParams = Mapping[str, str | int | float | bool | None]
 
 
+def _verify_ssl() -> bool:
+    raw = os.getenv("DEVBOX_SKIP_TLS_VERIFY", "").strip().lower()
+    return raw not in {"true", "1", "yes", "on"}
+
+
 class SyncTransport:
     def __init__(
         self,
@@ -35,6 +41,7 @@ class SyncTransport:
             headers=request_headers,
             timeout=timeout,
             transport=transport,
+            verify=_verify_ssl(),
         )
 
     def request(
@@ -192,6 +199,7 @@ class AsyncTransport:
             headers=request_headers,
             timeout=timeout,
             transport=transport,
+            verify=_verify_ssl(),
         )
 
     async def request(
