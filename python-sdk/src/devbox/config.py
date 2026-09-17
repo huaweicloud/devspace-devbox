@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
@@ -8,6 +9,19 @@ from urllib.parse import urlsplit
 from .errors import ConfigurationError
 
 DEFAULT_API_URL = "https://devbox.developer.myhuaweicloud.com"
+
+
+def gateway_verify_tls() -> bool:
+    skip = os.getenv("DEVBOX_GATEWAY_SKIP_TLS_VERIFY", "").strip().lower()
+    if skip in {"true", "1", "yes", "on"}:
+        warnings.warn(
+            "Gateway TLS certificate verification is disabled for debugging; "
+            "the connect token and sandbox data may be exposed to interception.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)

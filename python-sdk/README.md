@@ -258,6 +258,13 @@ python examples/run_local.py validate_full
 Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
 Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
 
+仅在数据面证书尚未配置好的临时调试环境，可设置
+`DEVBOX_GATEWAY_SKIP_TLS_VERIFY=true`，相当于对 Gateway 请求使用 `curl -k`。
+此开关同时适用于 Python 同步和异步接口，不影响 Manager 的证书校验；默认关闭，
+开启时会提示警告。它不能修复 DNS、连接超时或接口错误，且无法保证服务端身份，
+存在 Token 和沙箱数据被截获的风险，不应在生产使用。调试完成后删除该变量。
+原来的全局变量 `DEVBOX_SKIP_TLS_VERIFY` 不再使用。
+
 串行稳定性抽样（同样支持本地 Gateway DNS 覆盖）：
 
 ```bash

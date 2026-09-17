@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -8,6 +9,43 @@ import pytest
 import devbox._transport as transport_module
 from devbox import ProtocolError, ServiceUnavailableError
 from devbox._transport import AsyncTransport, SyncTransport
+from devbox.config import gateway_verify_tls
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "on", " TRUE "])
+def test_gateway_tls_debug_opt_in(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("DEVBOX_GATEWAY_SKIP_TLS_VERIFY", value)
+    with pytest.warns(RuntimeWarning, match="disabled for debugging"):
+        assert gateway_verify_tls() is False
+
+
+@pytest.mark.parametrize("value", ["", "false", "0", "no", "off", "typo"])
+def test_gateway_tls_enabled_by_default(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("DEVBOX_GATEWAY_SKIP_TLS_VERIFY", value)
+    monkeypatch.setenv("DEVBOX_SKIP_TLS_VERIFY", "true")
+    assert gateway_verify_tls() is True
+
+
+@pytest.mark.parametrize("verify", [True, False])
+def test_sync_tls_is_explicit(monkeypatch: pytest.MonkeyPatch, verify: bool) -> None:
+    monkeypatch.setenv("DEVBOX_GATEWAY_SKIP_TLS_VERIFY", "true")
+    monkeypatch.setenv("DEVBOX_SKIP_TLS_VERIFY", "true")
+    with patch.object(httpx, "Client") as constructor:
+        SyncTransport("https://api.test", headers={}, timeout=30)
+        assert constructor.call_args.kwargs["verify"] is True
+        SyncTransport("https://runtime.test", headers={}, timeout=30, verify=verify)
+        assert constructor.call_args.kwargs["verify"] is verify
+
+
+@pytest.mark.parametrize("verify", [True, False])
+def test_async_tls_is_explicit(monkeypatch: pytest.MonkeyPatch, verify: bool) -> None:
+    monkeypatch.setenv("DEVBOX_GATEWAY_SKIP_TLS_VERIFY", "true")
+    monkeypatch.setenv("DEVBOX_SKIP_TLS_VERIFY", "true")
+    with patch.object(httpx, "AsyncClient") as constructor:
+        AsyncTransport("https://api.test", headers={}, timeout=30)
+        assert constructor.call_args.kwargs["verify"] is True
+        AsyncTransport("https://runtime.test", headers={}, timeout=30, verify=verify)
+        assert constructor.call_args.kwargs["verify"] is verify
 
 
 def test_retries_connection_establishment_only(monkeypatch: pytest.MonkeyPatch) -> None:

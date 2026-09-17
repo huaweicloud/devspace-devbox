@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from ._transport import AsyncTransport, SyncTransport
 from .commands import AsyncCommands, Commands
-from .config import ConnectionConfig
+from .config import ConnectionConfig, gateway_verify_tls
 from .errors import ConflictError, DevBoxError, NotFoundError, ProtocolError
 from .filesystem import AsyncFilesystem, Filesystem
 from .git import AsyncGit, Git
@@ -454,6 +454,7 @@ class Sandbox:
                 _gateway_url(self._connection, self._gateway_url_override),
                 headers=_gateway_headers(self._connection),
                 timeout=self._request_timeout,
+                verify=gateway_verify_tls(),
             )
         return self._gateway
 
@@ -680,6 +681,7 @@ class AsyncSandbox:
                 _gateway_url(self._connection, self._gateway_url_override),
                 headers=_gateway_headers(self._connection),
                 timeout=self._request_timeout,
+                verify=gateway_verify_tls(),
             )
         return self._gateway
 

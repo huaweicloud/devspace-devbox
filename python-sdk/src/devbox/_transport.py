@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from collections.abc import AsyncGenerator, Generator, Iterator, Mapping
 from typing import Any
@@ -21,11 +20,6 @@ _CONNECT_HEADERS = {
 QueryParams = Mapping[str, str | int | float | bool | None]
 
 
-def _verify_ssl() -> bool:
-    raw = os.getenv("DEVBOX_SKIP_TLS_VERIFY", "").strip().lower()
-    return raw not in {"true", "1", "yes", "on"}
-
-
 class SyncTransport:
     def __init__(
         self,
@@ -34,6 +28,7 @@ class SyncTransport:
         headers: Mapping[str, str],
         timeout: float,
         transport: httpx.BaseTransport | None = None,
+        verify: bool = True,
     ) -> None:
         request_headers = {"User-Agent": f"devbox-python-sdk/{__version__}", **headers}
         self._client = httpx.Client(
@@ -41,7 +36,7 @@ class SyncTransport:
             headers=request_headers,
             timeout=timeout,
             transport=transport,
-            verify=_verify_ssl(),
+            verify=verify,
         )
 
     def request(
@@ -192,6 +187,7 @@ class AsyncTransport:
         headers: Mapping[str, str],
         timeout: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        verify: bool = True,
     ) -> None:
         request_headers = {"User-Agent": f"devbox-python-sdk/{__version__}", **headers}
         self._client = httpx.AsyncClient(
@@ -199,7 +195,7 @@ class AsyncTransport:
             headers=request_headers,
             timeout=timeout,
             transport=transport,
-            verify=_verify_ssl(),
+            verify=verify,
         )
 
     async def request(

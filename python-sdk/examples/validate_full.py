@@ -22,7 +22,7 @@ from devbox import (
     SandboxMetrics,
     ServiceUnavailableError,
 )
-from devbox.config import ConnectionConfig
+from devbox.config import ConnectionConfig, gateway_verify_tls
 
 T = TypeVar("T")
 
@@ -106,7 +106,7 @@ def main() -> None:
 
 def _check_endpoint(gateway_url: str) -> bool:
     url = gateway_url.replace("{port}", "49983").rstrip("/") + "/health"
-    with httpx.Client(timeout=10, follow_redirects=False) as client:
+    with httpx.Client(verify=gateway_verify_tls(), timeout=10, follow_redirects=False) as client:
         response = client.get(url)
     if not response.is_success:
         reason = ""
