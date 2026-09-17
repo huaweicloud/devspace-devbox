@@ -1,4 +1,3 @@
-import { rootCertificates } from "node:tls";
 import { Agent, type Dispatcher, fetch } from "undici";
 import {
   AuthenticationError,
@@ -15,7 +14,6 @@ import {
   ValidationError,
 } from "../errors.js";
 import { VERSION } from "../version.js";
-import { SERVICE_CA } from "./service-ca.js";
 import { objectValue, optionalString, type WireObject } from "./wire.js";
 
 const RETRY_DELAYS_MS = [100, 200] as const;
@@ -111,11 +109,7 @@ export class Transport {
     this.#baseUrl = baseUrl.replace(/\/$/, "");
     this.#headers = { "User-Agent": `devbox-js-sdk/${VERSION}`, ...options.headers };
     this.#timeoutMs = options.timeoutMs ?? 30_000;
-    this.#dispatcher =
-      options.dispatcher ??
-      new Agent({
-        connect: { ca: [...rootCertificates, SERVICE_CA] },
-      });
+    this.#dispatcher = options.dispatcher ?? new Agent();
     this.#ownsDispatcher = !options.dispatcher;
   }
 
