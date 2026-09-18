@@ -37,24 +37,36 @@ interface ResponseValue<T> {
 export class ConnectStream implements AsyncIterable<WireObject> {
   readonly #controller = new AbortController();
   readonly #open: () => Promise<FetchResponse>;
+  readonly #onClose: () => void;
   #closed = false;
 
-  constructor(open: () => Promise<FetchResponse>) {
+  constructor(open: () => Promise<FetchResponse>, onClose: () => void = () => {}) {
     this.#open = open;
+    this.#onClose = onClose;
   }
 
   close(): void {
     if (!this.#closed) {
       this.#closed = true;
       this.#controller.abort();
+      this.#onClose();
     }
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<WireObject> {
     if (this.#closed) return;
+    try {
+      yield* this.#read();
+    } finally {
+      this.close();
+    }
+  }
+
+  async *#read(): AsyncGenerator<WireObject> {
     const response = await this.#openWithSignal();
     const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
     if (contentType !== "application/connect+json") {
+      await response.body?.cancel();
       throw new ProtocolError("EnvD returned an invalid Connect content type");
     }
     if (!response.body) throw new ProtocolError("EnvD returned an empty Connect stream");
@@ -72,8 +84,13 @@ export class ConnectStream implements AsyncIterable<WireObject> {
       if (this.#closed && isAbort(error)) return;
       throw mapTransportError(error);
     } finally {
-      reader.releaseLock();
-      this.#closed = true;
+      try {
+        await reader.cancel();
+      } catch {
+        // The body may already be aborted or errored; preserve the original failure.
+      } finally {
+        reader.releaseLock();
+      }
     }
   }
 
@@ -97,6 +114,7 @@ export class Transport {
   readonly #timeoutMs: number;
   readonly #dispatcher: Dispatcher;
   readonly #ownsDispatcher: boolean;
+  readonly #streams = new Set<ConnectStream>();
 
   constructor(
     baseUrl: string,
@@ -126,8 +144,12 @@ export class Transport {
     path: string,
     options: RequestOptions = {},
   ): Promise<ResponseValue<T>> {
-    const response = await this.#send(method, path, options);
-    return { body: (await responseBody(response)) as T, headers: response.headers };
+    try {
+      const response = await this.#send(method, path, options);
+      return { body: (await responseBody(response)) as T, headers: response.headers };
+    } catch (error) {
+      throw mapTransportError(error);
+    }
   }
 
   async requestBytes(
@@ -135,8 +157,12 @@ export class Transport {
     path: string,
     options: RequestOptions = {},
   ): Promise<Uint8Array> {
-    const response = await this.#send(method, path, options);
-    return new Uint8Array(await response.arrayBuffer());
+    try {
+      const response = await this.#send(method, path, options);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      throw mapTransportError(error);
+    }
   }
 
   connectUnary<T = unknown>(path: string, body: unknown): Promise<T> {
@@ -152,36 +178,41 @@ export class Transport {
     timeoutMs?: number,
     extraHeaders: Record<string, string> = {},
   ): ConnectStream {
-    const stream = new ConnectStream(async () => {
-      const normalizedTimeout = normalizeStreamTimeout(timeoutMs);
-      const headers: Record<string, string> = {
-        ...this.#headers,
-        "Connect-Protocol-Version": "1",
-        "Content-Type": "application/connect+json",
-        ...extraHeaders,
-      };
-      if (normalizedTimeout !== undefined)
-        headers["Connect-Timeout-Ms"] = String(normalizedTimeout);
+    const stream = new ConnectStream(
+      async () => {
+        const normalizedTimeout = normalizeStreamTimeout(timeoutMs);
+        const headers: Record<string, string> = {
+          ...this.#headers,
+          "Connect-Protocol-Version": "1",
+          "Content-Type": "application/connect+json",
+          ...extraHeaders,
+        };
+        if (normalizedTimeout !== undefined)
+          headers["Connect-Timeout-Ms"] = String(normalizedTimeout);
 
-      const signal =
-        normalizedTimeout === undefined
-          ? stream.signal
-          : AbortSignal.any([stream.signal, AbortSignal.timeout(normalizedTimeout)]);
-      const response = await fetch(this.#url(path), {
-        method: "POST",
-        headers,
-        body: connectFrame(body),
-        redirect: "manual",
-        signal,
-        dispatcher: this.#dispatcher,
-      });
-      await validateResponse(response);
-      return response;
-    });
+        const signal =
+          normalizedTimeout === undefined
+            ? stream.signal
+            : AbortSignal.any([stream.signal, AbortSignal.timeout(normalizedTimeout)]);
+        const response = await fetch(this.#url(path), {
+          method: "POST",
+          headers,
+          body: connectFrame(body),
+          redirect: "manual",
+          signal,
+          dispatcher: this.#dispatcher,
+        });
+        await validateResponse(response);
+        return response;
+      },
+      () => this.#streams.delete(stream),
+    );
+    this.#streams.add(stream);
     return stream;
   }
 
   async close(): Promise<void> {
+    for (const stream of this.#streams) stream.close();
     if (this.#ownsDispatcher && "close" in this.#dispatcher) {
       await this.#dispatcher.close();
     }

@@ -78,6 +78,10 @@ try {
 
 沙箱生命周期的 `timeout`、`duration` 以秒为单位；命令、Git 和请求配置中的
 `timeoutMs`、`requestTimeoutMs` 以毫秒为单位。
+普通 HTTP 请求默认 `requestTimeoutMs=30000`，命令执行/重连默认 `timeoutMs=60000`，
+Git 的 clone/pull/push 默认 `timeoutMs=300000`。PTY 和目录监听不设总时限，完成交互后需关闭句柄或迭代器；
+关闭 Sandbox 会中止它的数据面流。调用方传入的自定义 dispatcher 由调用方负责关闭。
+`DevBox.close()` 只关闭管理面连接；通过它获取的 Sandbox 需要分别 `close()`。
 `setTimeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
 不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect` 的 `timeout` 选项续期。
 `isRunning()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。

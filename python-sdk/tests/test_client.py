@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from devbox import (
     AsyncDevBox,
+    AsyncSandbox,
     ConfigurationError,
     ConflictError,
     DevBox,
@@ -19,6 +22,20 @@ from devbox import (
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
 from devbox.sandbox import _gateway_headers, _gateway_url
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["create", "connect"])
+async def test_cancelled_sandbox_open_closes_client(operation: str) -> None:
+    transport = AsyncMock()
+    config = ConnectionConfig.resolve(api_key="test")
+    with (
+        patch("devbox.sandbox._async_control", return_value=(config, transport)),
+        patch(f"devbox.sandbox.AsyncSandboxes.{operation}", side_effect=asyncio.CancelledError),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await getattr(AsyncSandbox, operation)("test", api_key="test")
+    transport.close.assert_awaited_once()
 
 
 @pytest.mark.parametrize("token", ["", "bad; other=value", "bad\r\nX-Test: value", "bad\n"])

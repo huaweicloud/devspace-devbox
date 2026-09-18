@@ -112,13 +112,15 @@ class SyncTransport:
         headers: Mapping[str, str] | None = None,
     ) -> Generator[Mapping[str, Any], None, None]:
         request_headers = _connect_headers(timeout, headers)
+        network_timeout = httpx.Timeout(self._client.timeout)
+        network_timeout.read = _stream_timeout(timeout)
         try:
             with self._client.stream(
                 "POST",
                 path,
                 content=_connect_frame(json_body),
                 headers=request_headers,
-                timeout=_stream_timeout(timeout),
+                timeout=network_timeout,
             ) as response:
                 _reject_redirect(response)
                 if response.is_error:
@@ -273,13 +275,15 @@ class AsyncTransport:
         headers: Mapping[str, str] | None = None,
     ) -> AsyncGenerator[Mapping[str, Any], None]:
         request_headers = _connect_headers(timeout, headers)
+        network_timeout = httpx.Timeout(self._client.timeout)
+        network_timeout.read = _stream_timeout(timeout)
         try:
             async with self._client.stream(
                 "POST",
                 path,
                 content=_connect_frame(json_body),
                 headers=request_headers,
-                timeout=_stream_timeout(timeout),
+                timeout=network_timeout,
             ) as response:
                 _reject_redirect(response)
                 if response.is_error:

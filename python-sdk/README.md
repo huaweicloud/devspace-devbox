@@ -86,6 +86,11 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
 
 沙箱生命周期、命令和 Git 操作中的 `timeout`、`duration` 均以秒为单位。
+普通 HTTP 请求默认 `request_timeout=30`，命令执行/重连默认 `timeout=60`，
+Git 的 clone/pull/push 默认 `timeout=300`。PTY 和目录监听不设流读取超时，但建立连接、发送请求和
+等待连接池仍受 `request_timeout` 约束。HTTPX 的超时按网络阶段计算，
+不是整个操作的总耗时上限；命令超时还会通过 Connect 协议传递给服务端。
+`DevBox.close()` 只关闭管理面连接；通过它获取的 Sandbox 需要分别 `close()`。
 `set_timeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
 不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect(timeout=...)` 续期。
 `is_running()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。

@@ -144,3 +144,45 @@ def _transport(
         timeout=30,
         transport=httpx.MockTransport(handler),
     )
+
+
+@pytest.mark.parametrize("read_timeout", [None, 60])
+def test_stream_preserves_connection_timeout(read_timeout: float | None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.extensions["timeout"] == {
+            "connect": 7,
+            "read": read_timeout,
+            "write": 7,
+            "pool": 7,
+        }
+        return httpx.Response(
+            200,
+            content=b"\x02\x00\x00\x00\x02{}",
+            headers={"Content-Type": "application/connect+json"},
+        )
+
+    with SyncTransport(
+        "https://runtime.test", headers={}, timeout=7, transport=httpx.MockTransport(handler)
+    ) as transport:
+        assert list(transport.connect_stream("/stream", {}, timeout=read_timeout)) == []
+
+
+@pytest.mark.asyncio
+async def test_async_stream_preserves_connection_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.extensions["timeout"] == {
+            "connect": 7,
+            "read": None,
+            "write": 7,
+            "pool": 7,
+        }
+        return httpx.Response(
+            200,
+            content=b"\x02\x00\x00\x00\x02{}",
+            headers={"Content-Type": "application/connect+json"},
+        )
+
+    async with AsyncTransport(
+        "https://runtime.test", headers={}, timeout=7, transport=httpx.MockTransport(handler)
+    ) as transport:
+        assert [event async for event in transport.connect_stream("/stream", {})] == []

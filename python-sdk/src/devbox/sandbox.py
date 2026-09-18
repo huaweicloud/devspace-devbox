@@ -306,7 +306,7 @@ class Sandbox:
                 volume_mounts=volume_mounts,
                 idempotency_key=idempotency_key,
             )
-        except Exception:
+        except BaseException:
             transport.close()
             raise
         sandbox._owns_control = True
@@ -338,7 +338,7 @@ class Sandbox:
                 config.request_timeout,
                 gateway_url=config.gateway_url,
             ).connect(sandbox_id, timeout=timeout)
-        except Exception:
+        except BaseException:
             transport.close()
             raise
         sandbox._owns_control = True
@@ -537,7 +537,7 @@ class AsyncSandbox:
                 volume_mounts=volume_mounts,
                 idempotency_key=idempotency_key,
             )
-        except Exception:
+        except BaseException:
             await transport.close()
             raise
         sandbox._owns_control = True
@@ -569,7 +569,7 @@ class AsyncSandbox:
                 config.request_timeout,
                 gateway_url=config.gateway_url,
             ).connect(sandbox_id, timeout=timeout)
-        except Exception:
+        except BaseException:
             await transport.close()
             raise
         sandbox._owns_control = True
