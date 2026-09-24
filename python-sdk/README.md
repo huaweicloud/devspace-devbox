@@ -78,7 +78,7 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
 | `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
-| `Sandbox` | `create`、`connect`、`get_info`、`is_running`、`set_timeout`、`refresh`、`kill`、`close` | 沙箱生命周期 |
+| `Sandbox` | `create`、`connect`、`get_info`、`is_running`、`set_timeout`、`refresh`、`pause`、`resume`、`kill`、`close` | 沙箱生命周期 |
 | `sandbox.commands` | `run`、`connect`、`list`、`send_stdin`、`close_stdin`、`send_signal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`make_dir`、`move`、`remove` | 远端文件操作 |
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输和目录监听 |
@@ -91,9 +91,21 @@ Git 的 clone/pull/push 默认 `timeout=300`。PTY 和目录监听不设流读�
 等待连接池仍受 `request_timeout` 约束。HTTPX 的超时按网络阶段计算，
 不是整个操作的总耗时上限；命令超时还会通过 Connect 协议传递给服务端。
 `DevBox.close()` 只关闭管理面连接；通过它获取的 Sandbox 需要分别 `close()`。
-`set_timeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
-不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect(timeout=...)` 续期。
+`set_timeout(300)` 重设剩余 300 秒，可以缩短；`refresh(300)` 保证至少剩余 300 秒，只延长、不累加。
+`connect(timeout=300)` 对运行中的沙箱只延长，对暂停的沙箱执行恢复。
 `is_running()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。
+
+`pause()` 保留内存和磁盘并关闭当前数据面连接；`resume(timeout=300)` 恢复同一沙箱并换用新凭证，返回当前对象。
+暂停保留期为 24 小时，目前仅支持原节点恢复。暂停后要保留沙箱，应调用 `close()`，不要退出会自动 `kill()` 的 Sandbox 上下文。
+已有命令/PTY/监听句柄应在暂停前断开，恢复后按 PID 重新连接或重新建立监听，SDK 不自动重放命令。
+创建与恢复的正数 timeout 至少为 10 秒。自动暂停、流量自动唤醒和仅文件系统快照暂不开放。
+快照操作可能较慢，可在创建客户端时设置 `request_timeout=150`；该值不改变沙箱生存时间。
+
+部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
+
+```bash
+python examples/validate_lifecycle.py
+```
 
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
 `sandbox.files.make_dir()`，而不是 `sandbox.make_dir()`。

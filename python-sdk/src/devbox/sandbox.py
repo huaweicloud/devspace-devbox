@@ -376,12 +376,34 @@ class Sandbox:
         )
 
     def refresh(self, duration: int = 300) -> None:
-        """Reset expiration to now plus duration seconds, not add to the previous deadline."""
+        """Extend expiration to at least now plus duration; never shorten it."""
         self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
             json_body={"duration": _checked_timeout(duration)},
         )
+
+    def pause(self) -> None:
+        """Save memory and disk, then close local runtime connections.
+
+        Manager retains the paused sandbox for 24 hours. Context manager exit
+        still deletes it; use ``close()`` to leave it available for resume.
+        """
+        self._control.request("POST", f"/sandboxes/{_id(self.sandbox_id)}/pause")
+        self._info = replace(self._info, state=SandboxState.PAUSED)
+        self._close_gateway()
+
+    def resume(self, *, timeout: int = 300) -> Sandbox:
+        """Resume a paused sandbox and replace this handle's runtime credentials."""
+        payload = self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/resume",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        self._close_gateway()
+        self._info, self._connection = info, connection
+        return self
 
     def kill(self) -> bool:
         """Delete the sandbox, returning whether it still existed."""
@@ -449,6 +471,8 @@ class Sandbox:
             self.close()
 
     def _gateway_transport(self) -> SyncTransport:
+        if self._info.state is SandboxState.PAUSED:
+            raise ConflictError("sandbox is paused; call resume() or Sandbox.connect() first")
         if self._gateway is None:
             self._gateway = SyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),
@@ -605,12 +629,30 @@ class AsyncSandbox:
         )
 
     async def refresh(self, duration: int = 300) -> None:
-        """Reset expiration to now plus duration seconds, not add to the previous deadline."""
+        """Extend expiration to at least now plus duration; never shorten it."""
         await self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
             json_body={"duration": _checked_timeout(duration)},
         )
+
+    async def pause(self) -> None:
+        """Save memory and disk; context manager exit still deletes the sandbox."""
+        await self._control.request("POST", f"/sandboxes/{_id(self.sandbox_id)}/pause")
+        self._info = replace(self._info, state=SandboxState.PAUSED)
+        await self._close_gateway()
+
+    async def resume(self, *, timeout: int = 300) -> AsyncSandbox:
+        """Resume a paused sandbox and replace this handle's runtime credentials."""
+        payload = await self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/resume",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        await self._close_gateway()
+        self._info, self._connection = info, connection
+        return self
 
     async def kill(self) -> bool:
         """Delete the sandbox, returning whether it still existed."""
@@ -676,6 +718,8 @@ class AsyncSandbox:
             await self.close()
 
     async def _gateway_transport(self) -> AsyncTransport:
+        if self._info.state is SandboxState.PAUSED:
+            raise ConflictError("sandbox is paused; call resume() or AsyncSandbox.connect() first")
         if self._gateway is None:
             self._gateway = AsyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),

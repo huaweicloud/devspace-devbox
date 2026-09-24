@@ -24,6 +24,86 @@ from devbox.models import SandboxConnection
 from devbox.sandbox import _gateway_headers, _gateway_url
 
 
+def test_pause_resume_replaces_runtime_credentials() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(204)
+        if request.url.path.endswith("/resume"):
+            assert json.loads(request.content) == {"timeout": 600}
+            return httpx.Response(201, json={**response, "connectToken": "new-token"})
+        return httpx.Response(201, json=response)
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            sandbox.pause()
+            assert gateway._client.is_closed
+            assert sandbox.info.state.value == "paused"
+            with pytest.raises(ConflictError, match="resume"):
+                sandbox.files.read("/tmp/proof")
+            assert sandbox.resume(timeout=600) is sandbox
+            assert sandbox.info.state is SandboxState.RUNNING
+            assert sandbox._gateway_transport()._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_pause_resume_replaces_runtime_credentials() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(204)
+        if request.url.path.endswith("/resume"):
+            assert json.loads(request.content) == {"timeout": 600}
+            return httpx.Response(201, json={**response, "connectToken": "new-token"})
+        return httpx.Response(201, json=response)
+
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        http_transport=httpx.MockTransport(handler),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            await sandbox.pause()
+            assert gateway._client.is_closed
+            assert sandbox.info.state.value == "paused"
+            with pytest.raises(ConflictError, match="resume"):
+                await sandbox.files.read("/tmp/proof")
+            assert await sandbox.resume(timeout=600) is sandbox
+            assert sandbox.info.state is SandboxState.RUNNING
+            new_gateway = await sandbox._gateway_transport()
+            assert new_gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            await sandbox.close()
+
+
+def test_failed_pause_does_not_close_runtime() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(409, json={"code": "invalid_status", "message": "Busy"})
+        return httpx.Response(
+            201, json={**connection_response(), "domain": "https://runtime.example.test"}
+        )
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            with pytest.raises(ConflictError):
+                sandbox.pause()
+            assert sandbox.info.state is SandboxState.RUNNING
+            assert not gateway._client.is_closed
+        finally:
+            sandbox.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["create", "connect"])
 async def test_cancelled_sandbox_open_closes_client(operation: str) -> None:

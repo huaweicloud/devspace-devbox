@@ -235,11 +235,34 @@ export class Sandbox {
     });
   }
 
-  /** Reset expiration to now plus duration seconds, not add to the previous deadline. */
+  /** Extend expiration to at least now plus duration; never shorten it. */
   async refresh(duration = 300): Promise<void> {
     await this.#control.request("POST", `/sandboxes/${identifier(this.sandboxId)}/refreshes`, {
       json: { duration: checkedTimeout(duration) },
     });
+  }
+
+  /** Save memory and disk. Manager retains the paused sandbox for 24 hours. */
+  async pause(): Promise<void> {
+    await this.#control.request("POST", `/sandboxes/${identifier(this.sandboxId)}/pause`);
+    this.#info = { ...this.#info, state: SandboxState.Paused };
+    await this.#closeGateway();
+  }
+
+  /** Resume this sandbox, replacing the handle's runtime credentials. */
+  async resume(options: ConnectSandboxOptions = {}): Promise<this> {
+    const payload = await this.#control.request(
+      "POST",
+      `/sandboxes/${identifier(this.sandboxId)}/resume`,
+      {
+        json: { timeout: checkedTimeout(options.timeout ?? 300) },
+      },
+    );
+    const [info, connection] = sandboxPayload(payload);
+    await this.#closeGateway();
+    this.#info = info;
+    this.#connection = connection;
+    return this;
   }
 
   async kill(): Promise<boolean> {
@@ -307,6 +330,9 @@ export class Sandbox {
   }
 
   async #gatewayTransport(): Promise<Transport> {
+    if (this.#info.state === SandboxState.Paused) {
+      throw new ConflictError("sandbox is paused; call resume() or Sandbox.connect() first");
+    }
     if (!this.#gateway) {
       if (!this.#connection.connectToken || /[^A-Za-z0-9._-]/.test(this.#connection.connectToken)) {
         throw new ProtocolError("sandbox response does not provide a valid connectToken");

@@ -12,6 +12,46 @@ describe("sandboxes", () => {
     agent = undefined;
   });
 
+  it("pauses and resumes with fresh runtime credentials", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager.intercept({ path: "/sandboxes", method: "POST" }).reply(201, sandboxResponse);
+    manager.intercept({ path: "/sandboxes/sbx-1/pause", method: "POST" }).reply(204);
+    manager.intercept({ path: "/sandboxes/sbx-1/resume", method: "POST" }).reply(({ body }) => {
+      expect(JSON.parse(String(body))).toEqual({ timeout: 600 });
+      return { statusCode: 201, data: { ...sandboxResponse, connectToken: "new-token" } };
+    });
+    const runtime = agent.get("https://runtime.example.test");
+    for (const token of ["connect-token", "new-token"]) {
+      runtime
+        .intercept({
+          path: "/files?path=%2Ftmp%2Fproof",
+          method: "GET",
+          headers: { cookie: `relay_token=${token}` },
+        })
+        .reply(200, "proof");
+    }
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.create();
+    try {
+      expect(await sandbox.files.read("/tmp/proof")).toBe("proof");
+      await sandbox.pause();
+      expect(sandbox.info.state).toBe(SandboxState.Paused);
+      await expect(sandbox.files.read("/tmp/proof")).rejects.toThrow("sandbox is paused");
+      expect(await sandbox.resume({ timeout: 600 })).toBe(sandbox);
+      expect(sandbox.info.state).toBe(SandboxState.Running);
+      expect(await sandbox.files.read("/tmp/proof")).toBe("proof");
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await sandbox.close();
+      await client.close();
+    }
+  });
+
   it.each(["", "bad; other=value", "bad\r\nX-Test: value", "bad\n"])(
     "rejects missing or unsafe connect tokens",
     async (connectToken) => {

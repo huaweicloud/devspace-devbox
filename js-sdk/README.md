@@ -69,7 +69,7 @@ try {
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
 | `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
-| `Sandbox` | `create`、`connect`、`getInfo`、`isRunning`、`setTimeout`、`refresh`、`kill`、`close` | 沙箱生命周期 |
+| `Sandbox` | `create`、`connect`、`getInfo`、`isRunning`、`setTimeout`、`refresh`、`pause`、`resume`、`kill`、`close` | 沙箱生命周期 |
 | `sandbox.commands` | `run`、`connect`、`list`、`sendStdin`、`closeStdin`、`sendSignal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`makeDir`、`move`、`remove` | 远端文件 |
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输与目录监听 |
@@ -82,9 +82,21 @@ try {
 Git 的 clone/pull/push 默认 `timeoutMs=300000`。PTY 和目录监听不设总时限，完成交互后需关闭句柄或迭代器；
 关闭 Sandbox 会中止它的数据面流。调用方传入的自定义 dispatcher 由调用方负责关闭。
 `DevBox.close()` 只关闭管理面连接；通过它获取的 Sandbox 需要分别 `close()`。
-`setTimeout(300)` 和 `refresh(300)` 均把沙箱截止时间重设为当前时间后 300 秒，
-不是在原截止时间上累加。要修改剩余时间，请显式调用这两个方法，不要依赖 `connect` 的 `timeout` 选项续期。
+`setTimeout(300)` 重设剩余 300 秒，可以缩短；`refresh(300)` 保证至少剩余 300 秒，只延长、不累加。
+`connect(id, { timeout: 300 })` 对运行中的沙箱只延长，对暂停的沙箱执行恢复。
 `isRunning()` 查询管理面状态，不是数据面探活；过期清理期间，状态可能短暂滞后。
+
+`pause()` 保留内存和磁盘并关闭当前数据面连接；`resume({ timeout: 300 })` 恢复同一沙箱并换用新凭证，返回当前对象。
+暂停保留期为 24 小时，目前仅支持原节点恢复。已有命令/PTY/监听句柄应在暂停前断开，恢复后按 PID 重新连接或重新建立监听，SDK 不自动重放命令。
+创建与恢复的正数 timeout 至少为 10 秒。自动暂停、流量自动唤醒和仅文件系统快照暂不开放。
+快照操作可能较慢，可在创建客户端时设置 `requestTimeoutMs: 150000`；该值不改变沙箱生存时间。
+
+部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
+
+```bash
+npm run build
+node examples/validate-lifecycle.mjs
+```
 
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
 `sandbox.files.makeDir()`，而不是 `sandbox.makeDir()`。
