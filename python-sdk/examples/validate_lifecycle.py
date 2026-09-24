@@ -51,7 +51,7 @@ def main() -> None:
             assert sandbox.files.read(path) == marker
             print("PASS connect | paused sandbox resumed through Manager connect", flush=True)
 
-            sandbox.set_timeout(0)
+            sandbox.set_timeout(5)
             deadline = time.monotonic() + 75
             while sandbox.is_running() and time.monotonic() < deadline:
                 time.sleep(2)

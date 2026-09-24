@@ -56,7 +56,7 @@ try {
   check((await sandbox.files.read(path)) === marker, "connect did not restore file");
   console.log("PASS connect | paused sandbox resumed through Manager connect");
 
-  await sandbox.setTimeout(0);
+  await sandbox.setTimeout(5);
   const deadline = performance.now() + 75_000;
   while ((await sandbox.isRunning()) && performance.now() < deadline) await sleep(2000);
   check(!(await sandbox.isRunning()), "expired sandbox was not cleaned up within 75s");

@@ -192,6 +192,31 @@ describe("sandboxes", () => {
     await client.close();
   });
 
+  it("supports lifecycle timeouts up to 24 hours", async () => {
+    agent = mockAgent();
+    const pool = agent.get("https://manager.example.test");
+    pool.intercept({ path: "/sandboxes", method: "POST" }).reply(201, sandboxResponse);
+    pool.intercept({ path: "/sandboxes/sbx-1/timeout", method: "POST" }).reply(({ body }) => {
+      expect(JSON.parse(String(body))).toEqual({ timeout: 7200 });
+      return { statusCode: 204, data: "" };
+    });
+    pool.intercept({ path: "/sandboxes/sbx-1/refreshes", method: "POST" }).reply(({ body }) => {
+      expect(JSON.parse(String(body))).toEqual({ duration: 86400 });
+      return { statusCode: 204, data: "" };
+    });
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.create();
+    await sandbox.setTimeout(7200);
+    await sandbox.refresh(86400);
+    await expect(sandbox.setTimeout(90000)).rejects.toThrow("86400");
+    agent.assertNoPendingInterceptors();
+    await client.close();
+  });
+
   it.each(["already_killed", "another_conflict"])("handles kill conflict %s", async (code) => {
     agent = mockAgent();
     const pool = agent.get("https://manager.example.test");

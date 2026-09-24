@@ -21,7 +21,7 @@ from devbox import (
 )
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
-from devbox.sandbox import _gateway_headers, _gateway_url
+from devbox.sandbox import _checked_timeout, _gateway_headers, _gateway_url
 
 
 def test_pause_resume_replaces_runtime_credentials() -> None:
@@ -288,6 +288,14 @@ def test_lifecycle_uses_documented_paths_and_bodies() -> None:
         "/sandboxes/sbx_123/refreshes",
     ]
     assert json.loads(captured[1].content) == {"duration": 120}
+
+
+def test_lifecycle_timeout_supports_24_hours() -> None:
+    assert _checked_timeout(7200) == 7200
+    assert _checked_timeout(86400) == 86400
+    for invalid in (-1, 86401, 90000, True):
+        with pytest.raises(ValueError, match="86400"):
+            _checked_timeout(invalid)
 
 
 def test_logs_metrics_and_aggregate_metrics() -> None:
