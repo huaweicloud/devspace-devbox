@@ -24,6 +24,7 @@ import {
   parseSandboxInfo,
   type SandboxConnection,
   type SandboxInfo,
+  type SandboxLifecycle,
   type SandboxLogEntry,
   type SandboxMetrics,
   SandboxState,
@@ -39,6 +40,7 @@ export interface CreateSandboxOptions {
   clientId?: string;
   buildId?: string;
   volumeMounts?: readonly VolumeMount[];
+  lifecycle?: SandboxLifecycle;
   idempotencyKey?: string;
 }
 
@@ -330,7 +332,7 @@ export class Sandbox {
   }
 
   async #gatewayTransport(): Promise<Transport> {
-    if (this.#info.state === SandboxState.Paused) {
+    if (this.#info.state === SandboxState.Paused && !this.#info.lifecycle?.autoResume) {
       throw new ConflictError("sandbox is paused; call resume() or Sandbox.connect() first");
     }
     if (!this.#gateway) {
@@ -381,6 +383,15 @@ function createBody(template: string, options: CreateSandboxOptions): WireObject
       path: mount.path,
     })),
   };
+  if (options.lifecycle) {
+    const onTimeout = options.lifecycle.onTimeout ?? "kill";
+    if (options.lifecycle.autoResume && onTimeout !== "pause")
+      throw new RangeError("lifecycle.autoResume requires onTimeout='pause'");
+    body.autoPause = onTimeout === "pause";
+    body.autoPauseMemory = true;
+    if (options.lifecycle.autoResume !== undefined)
+      body.autoResume = { enabled: options.lifecycle.autoResume };
+  }
   if (options.clientId) body.clientID = options.clientId;
   if (options.buildId) body.buildID = options.buildId;
   return body;

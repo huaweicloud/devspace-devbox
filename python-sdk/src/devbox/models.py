@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar, cast
 
 from .errors import ProtocolError
 
@@ -41,16 +41,19 @@ class VolumeMount:
 
 @dataclass(frozen=True, slots=True)
 class SandboxLifecycle:
-    auto_resume: bool
-    on_timeout: str
+    on_timeout: Literal["kill", "pause"] = "kill"
+    auto_resume: bool = False
 
     @classmethod
     def from_wire(cls, value: object) -> SandboxLifecycle | None:
         if not isinstance(value, Mapping):
             return None
+        on_timeout = str(value.get("onTimeout", "kill"))
+        if on_timeout not in {"kill", "pause"}:
+            raise ProtocolError("DevBox returned an invalid sandbox lifecycle")
         return cls(
             auto_resume=bool(value.get("autoResume", False)),
-            on_timeout=str(value.get("onTimeout", "kill")),
+            on_timeout=cast(Literal["kill", "pause"], on_timeout),
         )
 
 

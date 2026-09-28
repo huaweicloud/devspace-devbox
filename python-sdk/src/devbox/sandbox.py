@@ -21,6 +21,7 @@ from .models import (
     Page,
     SandboxConnection,
     SandboxInfo,
+    SandboxLifecycle,
     SandboxLogEntry,
     SandboxMetrics,
     SandboxState,
@@ -54,6 +55,7 @@ class Sandboxes:
         client_id: str | None = None,
         build_id: str | None = None,
         volume_mounts: Sequence[VolumeMount] = (),
+        lifecycle: SandboxLifecycle | None = None,
         idempotency_key: str | None = None,
     ) -> Sandbox:
         payload = self._transport.request(
@@ -68,6 +70,7 @@ class Sandboxes:
                 client_id,
                 build_id,
                 volume_mounts,
+                lifecycle,
             ),
             headers={"Idempotency-Key": idempotency_key or str(uuid4())},
         )
@@ -152,6 +155,7 @@ class AsyncSandboxes:
         client_id: str | None = None,
         build_id: str | None = None,
         volume_mounts: Sequence[VolumeMount] = (),
+        lifecycle: SandboxLifecycle | None = None,
         idempotency_key: str | None = None,
     ) -> AsyncSandbox:
         payload = await self._transport.request(
@@ -166,6 +170,7 @@ class AsyncSandboxes:
                 client_id,
                 build_id,
                 volume_mounts,
+                lifecycle,
             ),
             headers={"Idempotency-Key": idempotency_key or str(uuid4())},
         )
@@ -275,6 +280,7 @@ class Sandbox:
         client_id: str | None = None,
         build_id: str | None = None,
         volume_mounts: Sequence[VolumeMount] = (),
+        lifecycle: SandboxLifecycle | None = None,
         idempotency_key: str | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
@@ -304,6 +310,7 @@ class Sandbox:
                 client_id=client_id,
                 build_id=build_id,
                 volume_mounts=volume_mounts,
+                lifecycle=lifecycle,
                 idempotency_key=idempotency_key,
             )
         except BaseException:
@@ -471,7 +478,9 @@ class Sandbox:
             self.close()
 
     def _gateway_transport(self) -> SyncTransport:
-        if self._info.state is SandboxState.PAUSED:
+        if self._info.state is SandboxState.PAUSED and not (
+            self._info.lifecycle and self._info.lifecycle.auto_resume
+        ):
             raise ConflictError("sandbox is paused; call resume() or Sandbox.connect() first")
         if self._gateway is None:
             self._gateway = SyncTransport(
@@ -530,6 +539,7 @@ class AsyncSandbox:
         client_id: str | None = None,
         build_id: str | None = None,
         volume_mounts: Sequence[VolumeMount] = (),
+        lifecycle: SandboxLifecycle | None = None,
         idempotency_key: str | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
@@ -559,6 +569,7 @@ class AsyncSandbox:
                 client_id=client_id,
                 build_id=build_id,
                 volume_mounts=volume_mounts,
+                lifecycle=lifecycle,
                 idempotency_key=idempotency_key,
             )
         except BaseException:
@@ -718,7 +729,9 @@ class AsyncSandbox:
             await self.close()
 
     async def _gateway_transport(self) -> AsyncTransport:
-        if self._info.state is SandboxState.PAUSED:
+        if self._info.state is SandboxState.PAUSED and not (
+            self._info.lifecycle and self._info.lifecycle.auto_resume
+        ):
             raise ConflictError("sandbox is paused; call resume() or AsyncSandbox.connect() first")
         if self._gateway is None:
             self._gateway = AsyncTransport(
@@ -786,6 +799,7 @@ def _create_body(
     client_id: str | None,
     build_id: str | None,
     volume_mounts: Sequence[VolumeMount],
+    lifecycle: SandboxLifecycle | None,
 ) -> dict[str, object]:
     if not template.strip():
         raise ValueError("template must not be blank")
@@ -801,6 +815,14 @@ def _create_body(
         body["clientID"] = client_id
     if build_id:
         body["buildID"] = build_id
+    if lifecycle is not None:
+        if lifecycle.on_timeout not in {"kill", "pause"}:
+            raise ValueError("lifecycle.on_timeout must be 'kill' or 'pause'")
+        if lifecycle.auto_resume and lifecycle.on_timeout != "pause":
+            raise ValueError("lifecycle.auto_resume requires on_timeout='pause'")
+        body["autoPause"] = lifecycle.on_timeout == "pause"
+        body["autoPauseMemory"] = True
+        body["autoResume"] = {"enabled": lifecycle.auto_resume}
     return body
 
 

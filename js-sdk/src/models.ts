@@ -48,8 +48,13 @@ export interface VolumeMount {
 }
 
 export interface SandboxLifecycle {
+  onTimeout?: "kill" | "pause";
+  autoResume?: boolean;
+}
+
+export interface SandboxInfoLifecycle {
+  onTimeout: "kill" | "pause";
   autoResume: boolean;
-  onTimeout: string;
 }
 
 export interface SandboxInfo {
@@ -65,7 +70,7 @@ export interface SandboxInfo {
   memoryMb?: number;
   diskSizeMb?: number;
   metadata: Record<string, string>;
-  lifecycle?: SandboxLifecycle;
+  lifecycle?: SandboxInfoLifecycle;
   volumeMounts: VolumeMount[];
 }
 
@@ -160,6 +165,9 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
     value.lifecycle && typeof value.lifecycle === "object"
       ? objectValue(value.lifecycle)
       : undefined;
+  const onTimeout = lifecycle?.onTimeout ?? "kill";
+  if (onTimeout !== "kill" && onTimeout !== "pause")
+    throw new ProtocolError("DevBox returned an invalid sandbox lifecycle");
   return {
     sandboxId: stringValue(pick(value, "sandboxId", "sandboxID", "sandbox_id", "id")),
     templateId: stringValue(pickOr(value, "default", "templateId", "templateID", "template_id")),
@@ -178,7 +186,7 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
     lifecycle: lifecycle
       ? {
           autoResume: Boolean(lifecycle.autoResume ?? false),
-          onTimeout: String(lifecycle.onTimeout ?? "kill"),
+          onTimeout,
         }
       : undefined,
     volumeMounts: Array.isArray(value.volumeMounts)

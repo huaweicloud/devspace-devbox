@@ -173,6 +173,57 @@ describe("sandboxes", () => {
     await client.close();
   });
 
+  it("serializes auto-resume lifecycle and lets paused traffic reach the gateway", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager.intercept({ path: "/sandboxes", method: "POST" }).reply(({ body }) => {
+      expect(JSON.parse(String(body))).toMatchObject({
+        autoPause: true,
+        autoPauseMemory: true,
+        autoResume: { enabled: true },
+      });
+      return {
+        statusCode: 201,
+        data: {
+          ...sandboxResponse,
+          state: "paused",
+          lifecycle: { onTimeout: "pause", autoResume: true },
+        },
+      };
+    });
+    agent
+      .get("https://runtime.example.test")
+      .intercept({ path: "/files?path=%2Ftmp%2Fproof", method: "GET" })
+      .reply(200, "proof");
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.create("default", {
+      lifecycle: { onTimeout: "pause", autoResume: true },
+    });
+    expect(await sandbox.files.read("/tmp/proof")).toBe("proof");
+    agent.assertNoPendingInterceptors();
+    await sandbox.close();
+    await client.close();
+  });
+
+  it("rejects auto-resume without pause", async () => {
+    agent = mockAgent();
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    await expect(
+      client.sandboxes.create("default", {
+        lifecycle: { onTimeout: "kill", autoResume: true },
+      }),
+    ).rejects.toThrow("requires");
+    await client.close();
+  });
+
   it("connects to a sandbox with explicit options", async () => {
     agent = mockAgent();
     const pool = agent.get("https://manager.example.test");

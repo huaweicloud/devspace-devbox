@@ -17,6 +17,7 @@ from devbox import (
     DevBox,
     ProtocolError,
     RateLimitError,
+    SandboxLifecycle,
     SandboxState,
 )
 from devbox.config import ConnectionConfig
@@ -197,6 +198,41 @@ def test_create_uses_manager_contract() -> None:
     assert sandbox._connection.tunnel_lifetime == 86400
     assert sandbox._connection.tunnel_expiration == 1788946515
     assert "connect-token" not in repr(sandbox._connection)
+
+
+def test_create_serializes_auto_resume_lifecycle() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            201,
+            json={
+                **connection_response(),
+                "domain": "https://runtime.example.test",
+                "state": "paused",
+                "lifecycle": {"onTimeout": "pause", "autoResume": True},
+            },
+        )
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create(
+            lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True)
+        )
+        body = json.loads(captured[0].content)
+        assert body["autoPause"] is True
+        assert body["autoPauseMemory"] is True
+        assert body["autoResume"] == {"enabled": True}
+        assert sandbox._gateway_transport() is not None
+        sandbox.close()
+
+
+def test_auto_resume_requires_pause_lifecycle() -> None:
+    with (
+        client(lambda _: pytest.fail("request should not be sent")) as api,
+        pytest.raises(ValueError, match="requires"),
+    ):
+        api.sandboxes.create(lifecycle=SandboxLifecycle(on_timeout="kill", auto_resume=True))
 
 
 def test_missing_token_expiration_is_not_inferred_from_tunnel_expiration() -> None:
