@@ -227,6 +227,22 @@ def test_create_serializes_auto_resume_lifecycle() -> None:
         sandbox.close()
 
 
+def test_create_serializes_kill_lifecycle_without_pause_options() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        api.sandboxes.create(lifecycle=SandboxLifecycle(on_timeout="kill"))
+
+    body = json.loads(captured[0].content)
+    assert body["autoPause"] is False
+    assert "autoPauseMemory" not in body
+    assert "autoResume" not in body
+
+
 def test_auto_resume_requires_pause_lifecycle() -> None:
     with (
         client(lambda _: pytest.fail("request should not be sent")) as api,

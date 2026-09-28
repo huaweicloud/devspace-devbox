@@ -820,9 +820,11 @@ def _create_body(
             raise ValueError("lifecycle.on_timeout must be 'kill' or 'pause'")
         if lifecycle.auto_resume and lifecycle.on_timeout != "pause":
             raise ValueError("lifecycle.auto_resume requires on_timeout='pause'")
-        body["autoPause"] = lifecycle.on_timeout == "pause"
-        body["autoPauseMemory"] = True
-        body["autoResume"] = {"enabled": lifecycle.auto_resume}
+        auto_pause = lifecycle.on_timeout == "pause"
+        body["autoPause"] = auto_pause
+        if auto_pause:
+            body["autoPauseMemory"] = True
+            body["autoResume"] = {"enabled": lifecycle.auto_resume}
     return body
 
 
