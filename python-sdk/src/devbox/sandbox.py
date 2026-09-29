@@ -84,6 +84,7 @@ class Sandboxes:
         )
 
     def connect(self, sandbox_id: str, *, timeout: int = 300) -> Sandbox:
+        """Fetch Gateway credentials, resuming a paused sandbox when needed."""
         payload = self._transport.request(
             "POST",
             f"/sandboxes/{_id(sandbox_id)}/connect",
@@ -331,7 +332,7 @@ class Sandbox:
         request_timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
     ) -> Sandbox:
-        """Fetch connection information for an existing sandbox from the Manager."""
+        """Fetch Gateway credentials; this does not itself open a data connection."""
         config, transport = _sync_control(
             api_key,
             api_url,
@@ -401,7 +402,7 @@ class Sandbox:
         self._close_gateway()
 
     def resume(self, *, timeout: int = 300) -> Sandbox:
-        """Resume a paused sandbox and replace this handle's runtime credentials."""
+        """Resume a paused sandbox and replace this handle's previous connect token."""
         payload = self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/resume",
@@ -590,7 +591,7 @@ class AsyncSandbox:
         request_timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
     ) -> AsyncSandbox:
-        """Fetch connection information for an existing sandbox from the Manager."""
+        """Fetch Gateway credentials; this does not itself open a data connection."""
         config, transport = _async_control(
             api_key,
             api_url,
@@ -654,7 +655,7 @@ class AsyncSandbox:
         await self._close_gateway()
 
     async def resume(self, *, timeout: int = 300) -> AsyncSandbox:
-        """Resume a paused sandbox and replace this handle's runtime credentials."""
+        """Resume a paused sandbox and replace this handle's previous connect token."""
         payload = await self._control.request(
             "POST",
             f"/sandboxes/{_id(self.sandbox_id)}/resume",

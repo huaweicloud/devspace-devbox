@@ -251,7 +251,7 @@ export class Sandbox {
     await this.#closeGateway();
   }
 
-  /** Resume this sandbox, replacing the handle's runtime credentials. */
+  /** Resume this sandbox and replace the handle's previous connect token. */
   async resume(options: ConnectSandboxOptions = {}): Promise<this> {
     const payload = await this.#control.request(
       "POST",
