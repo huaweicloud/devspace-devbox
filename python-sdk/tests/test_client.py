@@ -362,9 +362,9 @@ async def test_async_kill_handles_expired_sandbox() -> None:
         assert sandbox.info.state is SandboxState.STOPPED
 
 
-def test_v2_list_reads_pagination_headers() -> None:
+def test_list_reads_pagination_headers() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v2/sandboxes"
+        assert request.url.path == "/sandboxes"
         assert request.url.params["state"] == "running,paused"
         return httpx.Response(
             200,

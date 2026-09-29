@@ -110,7 +110,7 @@ export class Sandboxes {
       params.limit = options.limit;
     }
     if (options.nextToken) params.nextToken = options.nextToken;
-    const { body, headers } = await this.#transport.requestWithHeaders("GET", "/v2/sandboxes", {
+    const { body, headers } = await this.#transport.requestWithHeaders("GET", "/sandboxes", {
       params,
     });
     const total = headers.get("x-total-running");
@@ -302,7 +302,7 @@ export class Sandbox {
     if (options.search && options.search.length > 256)
       throw new RangeError("search must not exceed 256 characters");
     const payload = objectValue(
-      await this.#control.request("GET", `/v2/sandboxes/${identifier(this.sandboxId)}/logs`, {
+      await this.#control.request("GET", `/sandboxes/${identifier(this.sandboxId)}/logs`, {
         params: {
           cursor: options.cursor,
           limit,

@@ -332,7 +332,7 @@ describe("sandboxes", () => {
     agent = mockAgent();
     agent
       .get("https://manager.example.test")
-      .intercept({ path: "/v2/sandboxes?limit=10", method: "GET" })
+      .intercept({ path: "/sandboxes?limit=10", method: "GET" })
       .reply(200, [sandboxResponse], {
         headers: { "X-Next-Token": "next", "X-Total-Running": "1" },
       });

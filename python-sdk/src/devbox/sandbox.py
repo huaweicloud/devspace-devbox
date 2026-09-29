@@ -116,7 +116,7 @@ class Sandboxes:
         next_token: str | None = None,
     ) -> Page[SandboxInfo]:
         payload, headers = self._transport.request_with_headers(
-            "GET", "/v2/sandboxes", params=_list_params(metadata, states, limit, next_token)
+            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
@@ -216,7 +216,7 @@ class AsyncSandboxes:
         next_token: str | None = None,
     ) -> Page[SandboxInfo]:
         payload, headers = await self._transport.request_with_headers(
-            "GET", "/v2/sandboxes", params=_list_params(metadata, states, limit, next_token)
+            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
@@ -443,7 +443,7 @@ class Sandbox:
         payload = _mapping(
             self._control.request(
                 "GET",
-                f"/v2/sandboxes/{_id(self.sandbox_id)}/logs",
+                f"/sandboxes/{_id(self.sandbox_id)}/logs",
                 params=_log_params(cursor, limit, direction, level, search),
             )
         )
@@ -709,7 +709,7 @@ class AsyncSandbox:
         payload = _mapping(
             await self._control.request(
                 "GET",
-                f"/v2/sandboxes/{_id(self.sandbox_id)}/logs",
+                f"/sandboxes/{_id(self.sandbox_id)}/logs",
                 params=_log_params(cursor, limit, direction, level, search),
             )
         )
