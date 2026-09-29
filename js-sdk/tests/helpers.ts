@@ -31,7 +31,7 @@ export const sandboxResponse = {
   tunnelId: "aaaadysa",
   connectToken: "connect-token",
   tokenLifetime: 86_400,
-  tokenExpiration: 1_789_029_315,
+  tokenExpiration: 4_000_000_000,
   tunnelLifetime: 86_400,
   tunnelExpiration: 1_788_946_515,
 };

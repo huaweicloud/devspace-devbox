@@ -32,6 +32,8 @@ import {
 } from "./models.js";
 import { Pty } from "./pty.js";
 
+const TOKEN_REFRESH_WINDOW_SECONDS = 300;
+
 export interface CreateSandboxOptions {
   timeout?: number;
   envs?: Readonly<Record<string, string>>;
@@ -335,26 +337,39 @@ export class Sandbox {
     if (this.#info.state === SandboxState.Paused && !this.#info.lifecycle?.autoResume) {
       throw new ConflictError("sandbox is paused; call resume() or Sandbox.connect() first");
     }
+    await this.#refreshConnectionIfNeeded();
     if (!this.#gateway) {
-      if (!this.#connection.connectToken || /[^A-Za-z0-9._-]/.test(this.#connection.connectToken)) {
-        throw new ProtocolError("sandbox response does not provide a valid connectToken");
-      }
       const url = gatewayUrl(this.#connection, this.#context.gatewayUrl);
       if (!url) throw new ProtocolError("sandbox response does not provide an EnvD endpoint");
       if (url.replace(/^https:\/\//, "").endsWith(".sandbox.devbox.local")) {
         throw new ProtocolError("Manager returned a placeholder EnvD endpoint");
       }
       this.#gateway = new Transport(url, {
-        headers: {
-          Cookie: `relay_token=${this.#connection.connectToken}`,
-          "E2B-Sandbox-Id": this.sandboxId,
-          "E2B-Sandbox-Port": "49983",
-        },
+        headers: gatewayHeaders(this.#connection),
         timeoutMs: this.#context.requestTimeoutMs,
         dispatcher: this.#context.dispatcher,
       });
     }
     return this.#gateway;
+  }
+
+  async #refreshConnectionIfNeeded(): Promise<void> {
+    if (!tokenNeedsRefresh(this.#connection)) return;
+    const oldUrl = gatewayUrl(this.#connection, this.#context.gatewayUrl);
+    const payload = await this.#control.request(
+      "POST",
+      `/sandboxes/${identifier(this.sandboxId)}/connect`,
+    );
+    const [info, connection] = sandboxPayload(payload);
+    this.#info = info;
+    this.#connection = connection;
+    if (this.#gateway) {
+      if (oldUrl === gatewayUrl(connection, this.#context.gatewayUrl)) {
+        this.#gateway.updateHeaders(gatewayHeaders(connection));
+      } else {
+        await this.#closeGateway();
+      }
+    }
   }
 
   async #closeGateway(): Promise<void> {
@@ -368,6 +383,24 @@ function gatewayUrl(connection: SandboxConnection, configuredUrl?: string): stri
   if (configuredUrl.includes("{tunnel_id}") && !connection.tunnelId)
     throw new ProtocolError("sandbox response does not provide a tunnel ID");
   return configuredUrl.replaceAll("{tunnel_id}", connection.tunnelId).replaceAll("{port}", "49983");
+}
+
+function gatewayHeaders(connection: SandboxConnection): Record<string, string> {
+  if (!connection.connectToken || /[^A-Za-z0-9._-]/.test(connection.connectToken)) {
+    throw new ProtocolError("sandbox response does not provide a valid connectToken");
+  }
+  return {
+    Cookie: `relay_token=${connection.connectToken}`,
+    "E2B-Sandbox-Id": connection.sandboxId,
+    "E2B-Sandbox-Port": "49983",
+  };
+}
+
+function tokenNeedsRefresh(connection: SandboxConnection): boolean {
+  return (
+    connection.tokenExpiration !== undefined &&
+    connection.tokenExpiration <= Math.floor(Date.now() / 1000) + TOKEN_REFRESH_WINDOW_SECONDS
+  );
 }
 
 function createBody(template: string, options: CreateSandboxOptions): WireObject {

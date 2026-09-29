@@ -102,6 +102,7 @@ Git 的 clone/pull/push 默认 `timeout=300`。PTY 和目录监听不设流读�
 `set_timeout(5)` 验证短时自动销毁，后台清理最多有约 30 秒延迟。创建时可传
 `lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True)`，让超时行为改为内存快照暂停。
 `auto_resume=True` 允许兼容的 Gateway 在首次数据面请求到达时唤醒沙箱；显式 `connect()`/`resume()` 始终可用。
+SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不延长沙箱生命周期，用户无需管理 Token。
 仅文件系统快照暂不开放。
 快照操作可能较慢，可在创建客户端时设置 `request_timeout=150`；该值不改变沙箱生存时间。
 

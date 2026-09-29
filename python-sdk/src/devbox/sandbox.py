@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from .models import (
     VolumeMount,
 )
 from .pty import AsyncPty, Pty
+
+_TOKEN_REFRESH_WINDOW_SECONDS = 300
 
 
 class Sandboxes:
@@ -483,6 +486,7 @@ class Sandbox:
             self._info.lifecycle and self._info.lifecycle.auto_resume
         ):
             raise ConflictError("sandbox is paused; call resume() or Sandbox.connect() first")
+        self._refresh_connection_if_needed()
         if self._gateway is None:
             self._gateway = SyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),
@@ -491,6 +495,19 @@ class Sandbox:
                 verify=gateway_verify_tls(),
             )
         return self._gateway
+
+    def _refresh_connection_if_needed(self) -> None:
+        if not _token_needs_refresh(self._connection):
+            return
+        old_url = _gateway_url(self._connection, self._gateway_url_override)
+        payload = self._control.request("POST", f"/sandboxes/{_id(self.sandbox_id)}/connect")
+        info, connection = _sandbox_payload(payload)
+        self._info, self._connection = info, connection
+        if self._gateway is not None:
+            if old_url == _gateway_url(connection, self._gateway_url_override):
+                self._gateway.update_headers(_gateway_headers(connection))
+            else:
+                self._close_gateway()
 
     def _close_gateway(self) -> None:
         if self._gateway is not None:
@@ -734,6 +751,7 @@ class AsyncSandbox:
             self._info.lifecycle and self._info.lifecycle.auto_resume
         ):
             raise ConflictError("sandbox is paused; call resume() or AsyncSandbox.connect() first")
+        await self._refresh_connection_if_needed()
         if self._gateway is None:
             self._gateway = AsyncTransport(
                 _gateway_url(self._connection, self._gateway_url_override),
@@ -742,6 +760,19 @@ class AsyncSandbox:
                 verify=gateway_verify_tls(),
             )
         return self._gateway
+
+    async def _refresh_connection_if_needed(self) -> None:
+        if not _token_needs_refresh(self._connection):
+            return
+        old_url = _gateway_url(self._connection, self._gateway_url_override)
+        payload = await self._control.request("POST", f"/sandboxes/{_id(self.sandbox_id)}/connect")
+        info, connection = _sandbox_payload(payload)
+        self._info, self._connection = info, connection
+        if self._gateway is not None:
+            if old_url == _gateway_url(connection, self._gateway_url_override):
+                self._gateway.update_headers(_gateway_headers(connection))
+            else:
+                await self._close_gateway()
 
     async def _close_gateway(self) -> None:
         if self._gateway is not None:
@@ -950,6 +981,13 @@ def _gateway_headers(connection: SandboxConnection) -> dict[str, str]:
         "E2B-Sandbox-Id": connection.sandbox_id,
         "E2B-Sandbox-Port": "49983",
     }
+
+
+def _token_needs_refresh(connection: SandboxConnection) -> bool:
+    return (
+        connection.token_expiration is not None
+        and connection.token_expiration <= int(time.time()) + _TOKEN_REFRESH_WINDOW_SECONDS
+    )
 
 
 def _gateway_url(connection: SandboxConnection, configured_url: str | None = None) -> str:

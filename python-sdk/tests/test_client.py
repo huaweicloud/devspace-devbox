@@ -145,6 +145,64 @@ def test_gateway_uses_relay_cookie_for_all_runtime_requests() -> None:
             sandbox.close()
 
 
+def test_gateway_refreshes_expiring_connect_token() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        response = {
+            **connection_response(),
+            "domain": "https://runtime.example.test",
+            "connectToken": "old-token",
+            "tokenExpiration": 1,
+        }
+        if request.url.path.endswith("/connect"):
+            assert request.content == b""
+            response.update(connectToken="new-token", tokenExpiration=4_000_000_000)
+            return httpx.Response(200, json=response)
+        return httpx.Response(201, json=response)
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            assert requests == ["/sandboxes", "/sandboxes/sbx_123/connect"]
+            assert gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_gateway_refreshes_expiring_connect_token() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        response = {
+            **connection_response("sbx_async"),
+            "domain": "https://runtime.example.test",
+            "connectToken": "old-token",
+            "tokenExpiration": 1,
+        }
+        if request.url.path.endswith("/connect"):
+            response.update(connectToken="new-token", tokenExpiration=4_000_000_000)
+            return httpx.Response(200, json=response)
+        return httpx.Response(201, json=response)
+
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        http_transport=httpx.MockTransport(handler),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            assert requests == ["/sandboxes", "/sandboxes/sbx_async/connect"]
+            assert gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            await sandbox.close()
+
+
 @pytest.mark.asyncio
 async def test_async_gateway_uses_relay_cookie() -> None:
     async with AsyncDevBox(
@@ -194,7 +252,7 @@ def test_create_uses_manager_contract() -> None:
     assert sandbox._connection.tunnel_id == "aaaadysa"
     assert sandbox._connection.connect_token == "connect-token"
     assert sandbox._connection.token_lifetime == 86400
-    assert sandbox._connection.token_expiration == 1789029315
+    assert sandbox._connection.token_expiration == 4000000000
     assert sandbox._connection.tunnel_lifetime == 86400
     assert sandbox._connection.tunnel_expiration == 1788946515
     assert "connect-token" not in repr(sandbox._connection)
@@ -268,7 +326,7 @@ def test_connect_reads_latest_manager_connection() -> None:
     with client(handler) as api:
         sandbox = api.sandboxes.connect("sbx_123")
         assert sandbox._connection.connect_token == "connect-token"
-        assert sandbox._connection.token_expiration == 1789029315
+        assert sandbox._connection.token_expiration == 4000000000
         sandbox.close()
 
 
@@ -439,7 +497,7 @@ async def test_async_client_uses_same_contract() -> None:
         sandbox = await api.sandboxes.create()
     assert sandbox.sandbox_id == "sbx_async"
     assert sandbox._connection.connect_token == "connect-token"
-    assert sandbox._connection.token_expiration == 1789029315
+    assert sandbox._connection.token_expiration == 4000000000
 
 
 @pytest.mark.asyncio
@@ -453,7 +511,7 @@ async def test_async_connect_reads_latest_manager_connection() -> None:
     ) as api:
         sandbox = await api.sandboxes.connect("sbx_async")
         assert sandbox._connection.connect_token == "connect-token"
-        assert sandbox._connection.token_expiration == 1789029315
+        assert sandbox._connection.token_expiration == 4000000000
         await sandbox.close()
 
 
@@ -579,7 +637,7 @@ def connection_response(sandbox_id: str = "sbx_123") -> dict[str, object]:
         "tunnelId": "aaaadysa",
         "connectToken": "connect-token",
         "tokenLifetime": 86400,
-        "tokenExpiration": 1789029315,
+        "tokenExpiration": 4000000000,
         "tunnelLifetime": 86400,
         "tunnelExpiration": 1788946515,
     }

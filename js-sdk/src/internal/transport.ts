@@ -218,6 +218,10 @@ export class Transport {
     }
   }
 
+  updateHeaders(headers: Record<string, string>): void {
+    Object.assign(this.#headers, headers);
+  }
+
   async #send(method: string, path: string, options: RequestOptions): Promise<FetchResponse> {
     for (let attempt = 0; ; attempt += 1) {
       try {

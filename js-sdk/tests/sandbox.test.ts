@@ -113,6 +113,43 @@ describe("sandboxes", () => {
     }
   });
 
+  it("refreshes an expiring connect token before opening the gateway", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager.intercept({ path: "/sandboxes", method: "POST" }).reply(201, {
+      ...sandboxResponse,
+      connectToken: "old-token",
+      tokenExpiration: 1,
+    });
+    manager.intercept({ path: "/sandboxes/sbx-1/connect", method: "POST" }).reply(200, {
+      ...sandboxResponse,
+      connectToken: "new-token",
+      tokenExpiration: 4_000_000_000,
+    });
+    agent
+      .get("https://runtime.example.test")
+      .intercept({
+        path: "/files?path=%2Ftmp%2Fproof",
+        method: "GET",
+        headers: { cookie: "relay_token=new-token", "e2b-sandbox-id": "sbx-1" },
+      })
+      .reply(200, "proof");
+
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    const sandbox = await client.sandboxes.create();
+    try {
+      expect(await sandbox.files.read("/tmp/proof")).toBe("proof");
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await sandbox.close();
+      await client.close();
+    }
+  });
+
   it("parses the manager tunnel connection contract", () => {
     expect(parseConnection(sandboxResponse, "sbx-1")).toEqual({
       sandboxId: "sbx-1",
@@ -120,7 +157,7 @@ describe("sandboxes", () => {
       tunnelId: "aaaadysa",
       connectToken: "connect-token",
       tokenLifetime: 86_400,
-      tokenExpiration: 1_789_029_315,
+      tokenExpiration: 4_000_000_000,
       tunnelLifetime: 86_400,
       tunnelExpiration: 1_788_946_515,
       protocolVersion: "1.0.0",

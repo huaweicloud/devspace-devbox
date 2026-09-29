@@ -140,6 +140,9 @@ class SyncTransport:
     def close(self) -> None:
         self._client.close()
 
+    def update_headers(self, headers: Mapping[str, str]) -> None:
+        self._client.headers.update(headers)
+
     def __enter__(self) -> SyncTransport:
         return self
 
@@ -303,6 +306,9 @@ class AsyncTransport:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def update_headers(self, headers: Mapping[str, str]) -> None:
+        self._client.headers.update(headers)
 
     async def __aenter__(self) -> AsyncTransport:
         return self
