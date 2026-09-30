@@ -27,19 +27,6 @@ class FileType(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class VolumeMount:
-    name: str
-    path: str
-
-    def to_wire(self) -> dict[str, str]:
-        return {"name": self.name, "path": self.path}
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> VolumeMount:
-        return cls(name=str(_pick(value, "name")), path=str(_pick(value, "path")))
-
-
-@dataclass(frozen=True, slots=True)
 class SandboxLifecycle:
     on_timeout: Literal["kill", "pause"] = "kill"
     auto_resume: bool = False
@@ -62,17 +49,13 @@ class SandboxInfo:
     sandbox_id: str
     template_id: str
     state: SandboxState
-    client_id: str = ""
-    alias: str | None = None
     started_at: datetime | None = None
     end_at: datetime | None = None
-    envd_version: str = ""
     cpu_count: int | None = None
     memory_mb: int | None = None
     disk_size_mb: int | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
     lifecycle: SandboxLifecycle | None = None
-    volume_mounts: tuple[VolumeMount, ...] = ()
 
     @classmethod
     def from_wire(cls, value: Mapping[str, Any]) -> SandboxInfo:
@@ -82,23 +65,17 @@ class SandboxInfo:
                 _pick(value, "templateId", "templateID", "template_id", default="default")
             ),
             state=_enum(SandboxState, _pick(value, "state", "status", default="running")),
-            client_id=str(_pick(value, "clientID", "client_id", default="")),
-            alias=_optional_str(value.get("alias")),
             started_at=parse_optional_datetime(
                 _pick(value, "createdAt", "created_at", "startedAt", "started_at", default=None)
             ),
             end_at=parse_optional_datetime(
                 _pick(value, "expiresAt", "expires_at", "endAt", "end_at", default=None)
             ),
-            envd_version=str(_pick(value, "envdVersion", "envd_version", default="")),
             cpu_count=_optional_int(value.get("cpuCount")),
             memory_mb=_optional_int(value.get("memoryMB")),
             disk_size_mb=_optional_int(value.get("diskSizeMB")),
             metadata=_string_map(value.get("metadata")),
             lifecycle=SandboxLifecycle.from_wire(value.get("lifecycle")),
-            volume_mounts=tuple(
-                VolumeMount.from_wire(item) for item in _mapping_items(value.get("volumeMounts"))
-            ),
         )
 
 
@@ -108,11 +85,7 @@ class SandboxConnection:
     domain: str
     tunnel_id: str = ""
     connect_token: str = field(default="", repr=False)
-    token_lifetime: int | None = None
     token_expiration: int | None = None
-    tunnel_lifetime: int | None = None
-    tunnel_expiration: int | None = None
-    protocol_version: str = "v1"
 
     @classmethod
     def from_wire(cls, value: Mapping[str, Any], sandbox_id: str) -> SandboxConnection:
@@ -121,68 +94,7 @@ class SandboxConnection:
             domain=_domain(value.get("domain")),
             tunnel_id=str(value.get("tunnelId") or ""),
             connect_token=str(value.get("connectToken") or ""),
-            token_lifetime=_optional_int(value.get("tokenLifetime")),
             token_expiration=_optional_int(value.get("tokenExpiration")),
-            tunnel_lifetime=_optional_int(value.get("tunnelLifetime")),
-            tunnel_expiration=_optional_int(value.get("tunnelExpiration")),
-            protocol_version=str(value.get("envdVersion") or "v1"),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class SandboxMetrics:
-    timestamp_unix: int
-    cpu_count: int
-    cpu_used_percent: float
-    memory_used_bytes: int
-    memory_total_bytes: int
-    memory_cache_bytes: int
-    disk_used_bytes: int
-    disk_total_bytes: int
-    timestamp: datetime | None = None
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> SandboxMetrics:
-        return cls(
-            timestamp_unix=_integer(_pick(value, "timestampUnix")),
-            cpu_count=_integer(_pick(value, "cpuCount")),
-            cpu_used_percent=_number(_pick(value, "cpuUsedPct")),
-            memory_used_bytes=_integer(_pick(value, "memUsed")),
-            memory_total_bytes=_integer(_pick(value, "memTotal")),
-            memory_cache_bytes=_integer(_pick(value, "memCache")),
-            disk_used_bytes=_integer(_pick(value, "diskUsed")),
-            disk_total_bytes=_integer(_pick(value, "diskTotal")),
-            timestamp=parse_optional_datetime(value.get("timestamp")),
-        )
-
-
-class LogLevel(str, Enum):
-    ERROR = "ERROR"
-    WARNING = "WARNING"
-    INFO = "INFO"
-    DEBUG = "DEBUG"
-    TRACE = "TRACE"
-
-
-class LogsDirection(str, Enum):
-    BACKWARD = "backward"
-    FORWARD = "forward"
-
-
-@dataclass(frozen=True, slots=True)
-class SandboxLogEntry:
-    timestamp: datetime
-    level: LogLevel
-    message: str
-    fields: Mapping[str, str] = field(default_factory=dict)
-
-    @classmethod
-    def from_wire(cls, value: Mapping[str, Any]) -> SandboxLogEntry:
-        return cls(
-            timestamp=parse_datetime(_pick(value, "timestamp")),
-            level=_enum(LogLevel, _pick(value, "level")),
-            message=str(_pick(value, "message")),
-            fields=_string_map(value.get("fields")),
         )
 
 

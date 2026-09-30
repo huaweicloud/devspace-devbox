@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Dispatcher } from "undici";
 import { Commands } from "./commands.js";
 import { type ConnectionConfig, type DevBoxOptions, resolveConfig } from "./config.js";
@@ -14,21 +13,14 @@ import {
   type WireObject,
 } from "./internal/wire.js";
 import {
-  type LogLevel,
-  type LogsDirection,
   type Page,
   parseConnection,
-  parseLogEntry,
-  parseMetrics,
   parseObjectItems,
   parseSandboxInfo,
   type SandboxConnection,
   type SandboxInfo,
   type SandboxLifecycle,
-  type SandboxLogEntry,
-  type SandboxMetrics,
   SandboxState,
-  type VolumeMount,
 } from "./models.js";
 import { Pty } from "./pty.js";
 
@@ -38,12 +30,8 @@ export interface CreateSandboxOptions {
   timeout?: number;
   envs?: Readonly<Record<string, string>>;
   metadata?: Readonly<Record<string, string>>;
-  secure?: boolean;
-  clientId?: string;
   buildId?: string;
-  volumeMounts?: readonly VolumeMount[];
   lifecycle?: SandboxLifecycle;
-  idempotencyKey?: string;
 }
 
 export interface ConnectSandboxOptions {
@@ -76,7 +64,6 @@ export class Sandboxes {
   async create(template = "default", options: CreateSandboxOptions = {}): Promise<Sandbox> {
     const payload = await this.#transport.request("POST", "/sandboxes", {
       json: createBody(template, options),
-      headers: { "Idempotency-Key": options.idempotencyKey ?? randomUUID() },
     });
     const [info, connection] = sandboxPayload(payload);
     return Sandbox.fromConnection(this.#transport, info, connection, this.#context);
@@ -119,21 +106,6 @@ export class Sandboxes {
       nextToken: headers.get("x-next-token") ?? undefined,
       total: total ? responseInteger(total, "X-Total-Running") : undefined,
     };
-  }
-
-  async metrics(sandboxIds: readonly string[]): Promise<Record<string, SandboxMetrics>> {
-    const ids = [...new Set(sandboxIds.filter(Boolean))];
-    if (ids.length < 1 || ids.length > 100)
-      throw new RangeError("sandboxIds must contain between 1 and 100 unique IDs");
-    const payload = objectValue(
-      await this.#transport.request("GET", "/sandboxes/metrics", {
-        params: { sandbox_ids: ids.join(",") },
-      }),
-    );
-    const values = objectValue(payload.sandboxes ?? {});
-    return Object.fromEntries(
-      Object.entries(values).map(([id, value]) => [id, parseMetrics(objectValue(value))]),
-    );
   }
 }
 
@@ -287,47 +259,6 @@ export class Sandbox {
     return true;
   }
 
-  async getLogs(
-    options: {
-      cursor?: number;
-      limit?: number;
-      direction?: LogsDirection;
-      level?: LogLevel;
-      search?: string;
-    } = {},
-  ): Promise<SandboxLogEntry[]> {
-    const limit = options.limit ?? 1000;
-    if (!Number.isInteger(limit) || limit < 0 || limit > 1000)
-      throw new RangeError("limit must be between 0 and 1000");
-    if (options.search && options.search.length > 256)
-      throw new RangeError("search must not exceed 256 characters");
-    const payload = objectValue(
-      await this.#control.request("GET", `/sandboxes/${identifier(this.sandboxId)}/logs`, {
-        params: {
-          cursor: options.cursor,
-          limit,
-          direction: options.direction,
-          level: options.level,
-          search: options.search,
-        },
-      }),
-    );
-    return parseObjectItems(payload.logs ?? []).map(parseLogEntry);
-  }
-
-  async getMetrics(
-    options: { start?: number | Date; end?: number | Date } = {},
-  ): Promise<SandboxMetrics[]> {
-    const payload = await this.#control.request(
-      "GET",
-      `/sandboxes/${identifier(this.sandboxId)}/metrics`,
-      {
-        params: { start: metricTimestamp(options.start), end: metricTimestamp(options.end) },
-      },
-    );
-    return parseObjectItems(payload).map(parseMetrics);
-  }
-
   async close(): Promise<void> {
     await this.#closeGateway();
     if (this.#context.ownsControl) await this.#control.close();
@@ -408,24 +339,18 @@ function createBody(template: string, options: CreateSandboxOptions): WireObject
   const body: WireObject = {
     templateID: template,
     timeout: checkedTimeout(options.timeout ?? 300),
-    secure: options.secure ?? true,
     metadata: { ...options.metadata },
     envVars: { ...options.envs },
-    volumeMounts: (options.volumeMounts ?? []).map((mount) => ({
-      name: mount.name,
-      path: mount.path,
-    })),
   };
   if (options.lifecycle) {
     const onTimeout = options.lifecycle.onTimeout ?? "kill";
     if (options.lifecycle.autoResume && onTimeout !== "pause")
       throw new RangeError("lifecycle.autoResume requires onTimeout='pause'");
-    body.autoPause = onTimeout === "pause";
-    body.autoPauseMemory = true;
-    if (options.lifecycle.autoResume !== undefined)
-      body.autoResume = { enabled: options.lifecycle.autoResume };
+    body.lifecycle = {
+      onTimeout,
+      autoResume: options.lifecycle.autoResume ?? false,
+    };
   }
-  if (options.clientId) body.clientID = options.clientId;
   if (options.buildId) body.buildID = options.buildId;
   return body;
 }
@@ -451,11 +376,6 @@ function contextFrom(config: ConnectionConfig, ownsControl = false): SandboxCont
     dispatcher: config.dispatcher,
     ownsControl,
   };
-}
-
-function metricTimestamp(value?: number | Date): number | undefined {
-  if (value === undefined) return undefined;
-  return value instanceof Date ? Math.floor(value.getTime() / 1000) : value;
 }
 
 function responseInteger(value: string, field: string): number {

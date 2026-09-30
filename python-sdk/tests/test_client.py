@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -251,10 +250,7 @@ def test_create_uses_manager_contract() -> None:
     assert sandbox.sandbox_id == "sbx_123"
     assert sandbox._connection.tunnel_id == "aaaadysa"
     assert sandbox._connection.connect_token == "connect-token"
-    assert sandbox._connection.token_lifetime == 86400
     assert sandbox._connection.token_expiration == 4000000000
-    assert sandbox._connection.tunnel_lifetime == 86400
-    assert sandbox._connection.tunnel_expiration == 1788946515
     assert "connect-token" not in repr(sandbox._connection)
 
 
@@ -278,9 +274,7 @@ def test_create_serializes_auto_resume_lifecycle() -> None:
             lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True)
         )
         body = json.loads(captured[0].content)
-        assert body["autoPause"] is True
-        assert body["autoPauseMemory"] is True
-        assert body["autoResume"] == {"enabled": True}
+        assert body["lifecycle"] == {"onTimeout": "pause", "autoResume": True}
         assert sandbox._gateway_transport() is not None
         sandbox.close()
 
@@ -296,9 +290,7 @@ def test_create_serializes_kill_lifecycle_without_pause_options() -> None:
         api.sandboxes.create(lifecycle=SandboxLifecycle(on_timeout="kill"))
 
     body = json.loads(captured[0].content)
-    assert body["autoPause"] is False
-    assert "autoPauseMemory" not in body
-    assert "autoResume" not in body
+    assert body["lifecycle"] == {"onTimeout": "kill", "autoResume": False}
 
 
 def test_auto_resume_requires_pause_lifecycle() -> None:
@@ -312,9 +304,7 @@ def test_auto_resume_requires_pause_lifecycle() -> None:
 def test_missing_token_expiration_is_not_inferred_from_tunnel_expiration() -> None:
     connection = SandboxConnection.from_wire({"tunnelExpiration": 1788946515}, "sbx_123")
     assert connection.connect_token == ""
-    assert connection.token_lifetime is None
     assert connection.token_expiration is None
-    assert connection.tunnel_expiration == 1788946515
 
 
 def test_connect_reads_latest_manager_connection() -> None:
@@ -406,69 +396,6 @@ def test_lifecycle_timeout_supports_24_hours() -> None:
     for invalid in (-1, 86401, 90000, True):
         with pytest.raises(ValueError, match="86400"):
             _checked_timeout(invalid)
-
-
-def test_logs_metrics_and_aggregate_metrics() -> None:
-    metric = {
-        "timestampUnix": 1,
-        "cpuCount": 2,
-        "cpuUsedPct": 25.5,
-        "memUsed": 10,
-        "memTotal": 20,
-        "memCache": 1,
-        "diskUsed": 30,
-        "diskTotal": 40,
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/sandboxes":
-            return httpx.Response(201, json=connection_response())
-        if request.url.path.endswith("/logs"):
-            return httpx.Response(
-                200,
-                json={
-                    "logs": [
-                        {
-                            "timestamp": "2026-09-02T00:00:00Z",
-                            "level": "INFO",
-                            "message": "ready",
-                            "fields": {"source": "vm"},
-                        }
-                    ]
-                },
-            )
-        if request.url.path == "/sandboxes/metrics":
-            return httpx.Response(200, json={"sandboxes": {"sbx_123": metric}})
-        return httpx.Response(200, json=[metric])
-
-    with client(handler) as api:
-        sandbox = api.sandboxes.create()
-        logs = sandbox.get_logs(search="ready")
-        metrics = sandbox.get_metrics(start=1, end=2)
-        aggregate = api.sandboxes.metrics(["sbx_123"])
-
-    assert logs[0].message == "ready"
-    assert metrics[0].cpu_used_percent == 25.5
-    assert aggregate["sbx_123"].disk_total_bytes == 40
-
-
-def test_naive_metric_datetimes_are_interpreted_as_utc() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        if request.url.path == "/sandboxes":
-            return httpx.Response(201, json=connection_response())
-        return httpx.Response(200, json=[])
-
-    start = datetime(2026, 1, 1)
-    end = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
-    with client(handler) as api:
-        api.sandboxes.create().get_metrics(start=start, end=end)
-
-    params = captured[1].url.params
-    assert params["start"] == str(int(start.replace(tzinfo=timezone.utc).timestamp()))
-    assert params["end"] == str(int(end.timestamp()))
 
 
 def test_error_shape_preserves_message_and_code() -> None:

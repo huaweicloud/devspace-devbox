@@ -1,6 +1,5 @@
 import { ProtocolError } from "./errors.js";
 import {
-  dateValue,
   numberValue,
   objectItems,
   objectValue,
@@ -30,23 +29,6 @@ export type SandboxState = (typeof SandboxState)[keyof typeof SandboxState];
 export const FileType = { File: "file", Directory: "directory", Symlink: "symlink" } as const;
 export type FileType = (typeof FileType)[keyof typeof FileType];
 
-export const LogLevel = {
-  Error: "ERROR",
-  Warning: "WARNING",
-  Info: "INFO",
-  Debug: "DEBUG",
-  Trace: "TRACE",
-} as const;
-export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
-
-export const LogsDirection = { Backward: "backward", Forward: "forward" } as const;
-export type LogsDirection = (typeof LogsDirection)[keyof typeof LogsDirection];
-
-export interface VolumeMount {
-  name: string;
-  path: string;
-}
-
 export interface SandboxLifecycle {
   onTimeout?: "kill" | "pause";
   autoResume?: boolean;
@@ -61,17 +43,13 @@ export interface SandboxInfo {
   sandboxId: string;
   templateId: string;
   state: SandboxState;
-  clientId: string;
-  alias?: string;
   startedAt?: Date;
   endAt?: Date;
-  envdVersion: string;
   cpuCount?: number;
   memoryMb?: number;
   diskSizeMb?: number;
   metadata: Record<string, string>;
   lifecycle?: SandboxInfoLifecycle;
-  volumeMounts: VolumeMount[];
 }
 
 export interface SandboxConnection {
@@ -79,30 +57,7 @@ export interface SandboxConnection {
   domain: string;
   tunnelId: string;
   connectToken: string;
-  tokenLifetime?: number;
   tokenExpiration?: number;
-  tunnelLifetime?: number;
-  tunnelExpiration?: number;
-  protocolVersion: string;
-}
-
-export interface SandboxMetrics {
-  timestampUnix: number;
-  cpuCount: number;
-  cpuUsedPercent: number;
-  memoryUsedBytes: number;
-  memoryTotalBytes: number;
-  memoryCacheBytes: number;
-  diskUsedBytes: number;
-  diskTotalBytes: number;
-  timestamp?: Date;
-}
-
-export interface SandboxLogEntry {
-  timestamp: Date;
-  level: LogLevel;
-  message: string;
-  fields: Record<string, string>;
 }
 
 export interface ProcessInfo {
@@ -172,13 +127,10 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
     sandboxId: stringValue(pick(value, "sandboxId", "sandboxID", "sandbox_id", "id")),
     templateId: stringValue(pickOr(value, "default", "templateId", "templateID", "template_id")),
     state: state as SandboxState,
-    clientId: stringValue(pickOr(value, "", "clientID", "client_id")),
-    alias: optionalString(value.alias),
     startedAt: optionalDate(
       pickOr(value, undefined, "createdAt", "created_at", "startedAt", "started_at"),
     ),
     endAt: optionalDate(pickOr(value, undefined, "expiresAt", "expires_at", "endAt", "end_at")),
-    envdVersion: stringValue(pickOr(value, "", "envdVersion", "envd_version")),
     cpuCount: optionalNumber(value.cpuCount),
     memoryMb: optionalNumber(value.memoryMB),
     diskSizeMb: optionalNumber(value.diskSizeMB),
@@ -189,14 +141,6 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
           onTimeout,
         }
       : undefined,
-    volumeMounts: Array.isArray(value.volumeMounts)
-      ? value.volumeMounts
-          .map((item) => objectValue(item))
-          .map((item) => ({
-            name: stringValue(pick(item, "name")),
-            path: stringValue(pick(item, "path")),
-          }))
-      : [],
   };
 }
 
@@ -209,37 +153,7 @@ export function parseConnection(value: WireObject, sandboxId: string): SandboxCo
     domain,
     tunnelId: stringValue(value.tunnelId ?? ""),
     connectToken: stringValue(value.connectToken ?? ""),
-    tokenLifetime: optionalNumber(value.tokenLifetime),
     tokenExpiration: optionalNumber(value.tokenExpiration),
-    tunnelLifetime: optionalNumber(value.tunnelLifetime),
-    tunnelExpiration: optionalNumber(value.tunnelExpiration),
-    protocolVersion: stringValue(value.envdVersion ?? "v1"),
-  };
-}
-
-export function parseMetrics(value: WireObject): SandboxMetrics {
-  return {
-    timestampUnix: numberValue(pick(value, "timestampUnix")),
-    cpuCount: numberValue(pick(value, "cpuCount")),
-    cpuUsedPercent: numberValue(pick(value, "cpuUsedPct")),
-    memoryUsedBytes: numberValue(pick(value, "memUsed")),
-    memoryTotalBytes: numberValue(pick(value, "memTotal")),
-    memoryCacheBytes: numberValue(pick(value, "memCache")),
-    diskUsedBytes: numberValue(pick(value, "diskUsed")),
-    diskTotalBytes: numberValue(pick(value, "diskTotal")),
-    timestamp: optionalDate(value.timestamp),
-  };
-}
-
-export function parseLogEntry(value: WireObject): SandboxLogEntry {
-  const level = stringValue(pick(value, "level"));
-  if (!Object.values(LogLevel).includes(level as LogLevel))
-    throw new ProtocolError("DevBox returned an invalid LogLevel");
-  return {
-    timestamp: dateValue(pick(value, "timestamp")),
-    level: level as LogLevel,
-    message: stringValue(pick(value, "message")),
-    fields: stringRecord(value.fields),
   };
 }
 

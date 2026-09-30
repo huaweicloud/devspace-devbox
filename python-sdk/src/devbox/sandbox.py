@@ -4,11 +4,9 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime, timezone
 from types import TracebackType
 from typing import Any
 from urllib.parse import quote
-from uuid import uuid4
 
 from ._transport import AsyncTransport, SyncTransport
 from .commands import AsyncCommands, Commands
@@ -17,16 +15,11 @@ from .errors import ConflictError, DevBoxError, NotFoundError, ProtocolError
 from .filesystem import AsyncFilesystem, Filesystem
 from .git import AsyncGit, Git
 from .models import (
-    LogLevel,
-    LogsDirection,
     Page,
     SandboxConnection,
     SandboxInfo,
     SandboxLifecycle,
-    SandboxLogEntry,
-    SandboxMetrics,
     SandboxState,
-    VolumeMount,
 )
 from .pty import AsyncPty, Pty
 
@@ -54,12 +47,8 @@ class Sandboxes:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        secure: bool = True,
-        client_id: str | None = None,
         build_id: str | None = None,
-        volume_mounts: Sequence[VolumeMount] = (),
         lifecycle: SandboxLifecycle | None = None,
-        idempotency_key: str | None = None,
     ) -> Sandbox:
         payload = self._transport.request(
             "POST",
@@ -69,13 +58,9 @@ class Sandboxes:
                 timeout,
                 envs,
                 metadata,
-                secure,
-                client_id,
                 build_id,
-                volume_mounts,
                 lifecycle,
             ),
-            headers={"Idempotency-Key": idempotency_key or str(uuid4())},
         )
         info, connection = _sandbox_payload(payload)
         return Sandbox(
@@ -120,20 +105,6 @@ class Sandboxes:
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
-    def metrics(self, sandbox_ids: Sequence[str]) -> Mapping[str, SandboxMetrics]:
-        payload = _mapping(
-            self._transport.request(
-                "GET",
-                "/sandboxes/metrics",
-                params={"sandbox_ids": ",".join(_sandbox_ids(sandbox_ids))},
-            )
-        )
-        values = _mapping(payload.get("sandboxes", {}))
-        return {
-            str(key): SandboxMetrics.from_wire(_mapping(value)) for key, value in values.items()
-        }
-
-
 class AsyncSandboxes:
     """Asynchronous sandbox lifecycle operations bound to a reusable client."""
 
@@ -155,12 +126,8 @@ class AsyncSandboxes:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        secure: bool = True,
-        client_id: str | None = None,
         build_id: str | None = None,
-        volume_mounts: Sequence[VolumeMount] = (),
         lifecycle: SandboxLifecycle | None = None,
-        idempotency_key: str | None = None,
     ) -> AsyncSandbox:
         payload = await self._transport.request(
             "POST",
@@ -170,13 +137,9 @@ class AsyncSandboxes:
                 timeout,
                 envs,
                 metadata,
-                secure,
-                client_id,
                 build_id,
-                volume_mounts,
                 lifecycle,
             ),
-            headers={"Idempotency-Key": idempotency_key or str(uuid4())},
         )
         info, connection = _sandbox_payload(payload)
         return AsyncSandbox(
@@ -219,20 +182,6 @@ class AsyncSandboxes:
             "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
-
-    async def metrics(self, sandbox_ids: Sequence[str]) -> Mapping[str, SandboxMetrics]:
-        payload = _mapping(
-            await self._transport.request(
-                "GET",
-                "/sandboxes/metrics",
-                params={"sandbox_ids": ",".join(_sandbox_ids(sandbox_ids))},
-            )
-        )
-        values = _mapping(payload.get("sandboxes", {}))
-        return {
-            str(key): SandboxMetrics.from_wire(_mapping(value)) for key, value in values.items()
-        }
-
 
 class Sandbox:
     """The main synchronous entry point for one remote sandbox.
@@ -280,12 +229,8 @@ class Sandbox:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        secure: bool = True,
-        client_id: str | None = None,
         build_id: str | None = None,
-        volume_mounts: Sequence[VolumeMount] = (),
         lifecycle: SandboxLifecycle | None = None,
-        idempotency_key: str | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
@@ -310,12 +255,8 @@ class Sandbox:
                 timeout=timeout,
                 envs=envs,
                 metadata=metadata,
-                secure=secure,
-                client_id=client_id,
                 build_id=build_id,
-                volume_mounts=volume_mounts,
                 lifecycle=lifecycle,
-                idempotency_key=idempotency_key,
             )
         except BaseException:
             transport.close()
@@ -430,34 +371,6 @@ class Sandbox:
         self._info = replace(self._info, state=SandboxState.STOPPED)
         return True
 
-    def get_logs(
-        self,
-        *,
-        cursor: int | None = None,
-        limit: int = 1000,
-        direction: LogsDirection | str | None = None,
-        level: LogLevel | str | None = None,
-        search: str | None = None,
-    ) -> tuple[SandboxLogEntry, ...]:
-        """Return sandbox lifecycle logs matching the supplied filters."""
-        payload = _mapping(
-            self._control.request(
-                "GET",
-                f"/sandboxes/{_id(self.sandbox_id)}/logs",
-                params=_log_params(cursor, limit, direction, level, search),
-            )
-        )
-        return tuple(SandboxLogEntry.from_wire(item) for item in _items(payload.get("logs", [])))
-
-    def get_metrics(
-        self, *, start: int | datetime | None = None, end: int | datetime | None = None
-    ) -> tuple[SandboxMetrics, ...]:
-        """Return sandbox resource metrics for an optional time range."""
-        payload = self._control.request(
-            "GET", f"/sandboxes/{_id(self.sandbox_id)}/metrics", params=_metric_params(start, end)
-        )
-        return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
-
     def close(self) -> None:
         """Close local connections without deleting the remote sandbox."""
         self._close_gateway()
@@ -553,12 +466,8 @@ class AsyncSandbox:
         timeout: int = 300,
         envs: Mapping[str, str] | None = None,
         metadata: Mapping[str, str] | None = None,
-        secure: bool = True,
-        client_id: str | None = None,
         build_id: str | None = None,
-        volume_mounts: Sequence[VolumeMount] = (),
         lifecycle: SandboxLifecycle | None = None,
-        idempotency_key: str | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
@@ -583,12 +492,8 @@ class AsyncSandbox:
                 timeout=timeout,
                 envs=envs,
                 metadata=metadata,
-                secure=secure,
-                client_id=client_id,
                 build_id=build_id,
-                volume_mounts=volume_mounts,
                 lifecycle=lifecycle,
-                idempotency_key=idempotency_key,
             )
         except BaseException:
             await transport.close()
@@ -697,32 +602,6 @@ class AsyncSandbox:
         self._info = replace(self._info, state=SandboxState.STOPPED)
         return True
 
-    async def get_logs(
-        self,
-        *,
-        cursor: int | None = None,
-        limit: int = 1000,
-        direction: LogsDirection | str | None = None,
-        level: LogLevel | str | None = None,
-        search: str | None = None,
-    ) -> tuple[SandboxLogEntry, ...]:
-        payload = _mapping(
-            await self._control.request(
-                "GET",
-                f"/sandboxes/{_id(self.sandbox_id)}/logs",
-                params=_log_params(cursor, limit, direction, level, search),
-            )
-        )
-        return tuple(SandboxLogEntry.from_wire(item) for item in _items(payload.get("logs", [])))
-
-    async def get_metrics(
-        self, *, start: int | datetime | None = None, end: int | datetime | None = None
-    ) -> tuple[SandboxMetrics, ...]:
-        payload = await self._control.request(
-            "GET", f"/sandboxes/{_id(self.sandbox_id)}/metrics", params=_metric_params(start, end)
-        )
-        return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
-
     async def close(self) -> None:
         """Close local connections without deleting the remote sandbox."""
         await self._close_gateway()
@@ -827,10 +706,7 @@ def _create_body(
     timeout: int,
     envs: Mapping[str, str] | None,
     metadata: Mapping[str, str] | None,
-    secure: bool,
-    client_id: str | None,
     build_id: str | None,
-    volume_mounts: Sequence[VolumeMount],
     lifecycle: SandboxLifecycle | None,
 ) -> dict[str, object]:
     if not template.strip():
@@ -838,13 +714,9 @@ def _create_body(
     body: dict[str, object] = {
         "templateID": template,
         "timeout": _checked_timeout(timeout),
-        "secure": secure,
         "metadata": dict(metadata or {}),
         "envVars": dict(envs or {}),
-        "volumeMounts": [item.to_wire() for item in volume_mounts],
     }
-    if client_id:
-        body["clientID"] = client_id
     if build_id:
         body["buildID"] = build_id
     if lifecycle is not None:
@@ -852,11 +724,10 @@ def _create_body(
             raise ValueError("lifecycle.on_timeout must be 'kill' or 'pause'")
         if lifecycle.auto_resume and lifecycle.on_timeout != "pause":
             raise ValueError("lifecycle.auto_resume requires on_timeout='pause'")
-        auto_pause = lifecycle.on_timeout == "pause"
-        body["autoPause"] = auto_pause
-        if auto_pause:
-            body["autoPauseMemory"] = True
-            body["autoResume"] = {"enabled": lifecycle.auto_resume}
+        body["lifecycle"] = {
+            "onTimeout": lifecycle.on_timeout,
+            "autoResume": lifecycle.auto_resume,
+        }
     return body
 
 
@@ -894,52 +765,6 @@ def _list_params(
     if next_token:
         params["nextToken"] = next_token
     return params
-
-
-def _log_params(
-    cursor: int | None,
-    limit: int,
-    direction: LogsDirection | str | None,
-    level: LogLevel | str | None,
-    search: str | None,
-) -> dict[str, str | int]:
-    if not 0 <= limit <= 1000:
-        raise ValueError("limit must be between 0 and 1000")
-    if search is not None and len(search) > 256:
-        raise ValueError("search must not exceed 256 characters")
-    params: dict[str, str | int] = {"limit": limit}
-    if cursor is not None:
-        params["cursor"] = cursor
-    if direction:
-        params["direction"] = direction.value if isinstance(direction, LogsDirection) else direction
-    if level:
-        params["level"] = level.value if isinstance(level, LogLevel) else level
-    if search:
-        params["search"] = search
-    return params
-
-
-def _metric_params(start: int | datetime | None, end: int | datetime | None) -> dict[str, int]:
-    params: dict[str, int] = {}
-    if start is not None:
-        params["start"] = _metric_timestamp(start)
-    if end is not None:
-        params["end"] = _metric_timestamp(end)
-    return params
-
-
-def _metric_timestamp(value: int | datetime) -> int:
-    if isinstance(value, int):
-        return value
-    timestamp = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-    return int(timestamp.timestamp())
-
-
-def _sandbox_ids(values: Sequence[str]) -> tuple[str, ...]:
-    ids = tuple(dict.fromkeys(value for value in values if value))
-    if not ids or len(ids) > 100:
-        raise ValueError("sandbox_ids must contain between 1 and 100 unique IDs")
-    return ids
 
 
 def _items(value: object) -> tuple[Mapping[str, Any], ...]:

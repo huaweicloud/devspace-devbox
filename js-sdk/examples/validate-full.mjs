@@ -110,12 +110,6 @@ async function validateSandbox(client, sandbox, validator) {
     )
       throw new Error(`refresh did not reset the deadline: ${info.endAt}`);
   });
-  await validator.verify("manager.metrics", () =>
-    step("sandbox.getMetrics()", () => sandbox.getMetrics()),
-  );
-  await validator.verify("manager.logs", () =>
-    step("sandbox.getLogs(limit=20)", () => sandbox.getLogs({ limit: 20 })),
-  );
   const runtime = await validator.verify("runtime.ready", () => waitForRuntime(sandbox));
   if (!runtime) {
     console.log("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable");

@@ -156,20 +156,14 @@ describe("sandboxes", () => {
       domain: "https://runtime.example.test",
       tunnelId: "aaaadysa",
       connectToken: "connect-token",
-      tokenLifetime: 86_400,
       tokenExpiration: 4_000_000_000,
-      tunnelLifetime: 86_400,
-      tunnelExpiration: 1_788_946_515,
-      protocolVersion: "1.0.0",
     });
   });
 
   it("does not infer token expiration from tunnel expiration", () => {
     const connection = parseConnection({ tunnelExpiration: 1_788_946_515 }, "sbx-1");
     expect(connection.connectToken).toBe("");
-    expect(connection.tokenLifetime).toBeUndefined();
     expect(connection.tokenExpiration).toBeUndefined();
-    expect(connection.tunnelExpiration).toBe(1_788_946_515);
   });
 
   it("creates a sandbox using the manager wire contract", async () => {
@@ -179,14 +173,13 @@ describe("sandboxes", () => {
       .intercept({
         path: "/sandboxes",
         method: "POST",
-        headers: { "X-API-Key": "devbridge_test", "Idempotency-Key": "request-1" },
+        headers: { "X-API-Key": "devbridge_test" },
       })
       .reply(({ body }) => {
         const request = JSON.parse(String(body));
         expect(request).toMatchObject({
           templateID: "default",
           timeout: 600,
-          secure: true,
           envVars: { MODE: "test" },
         });
         expect(request).not.toHaveProperty("network");
@@ -202,7 +195,6 @@ describe("sandboxes", () => {
     const sandbox = await client.sandboxes.create("default", {
       timeout: 600,
       envs: { MODE: "test" },
-      idempotencyKey: "request-1",
     });
 
     expect(sandbox.sandboxId).toBe("sbx-1");
@@ -215,9 +207,7 @@ describe("sandboxes", () => {
     const manager = agent.get("https://manager.example.test");
     manager.intercept({ path: "/sandboxes", method: "POST" }).reply(({ body }) => {
       expect(JSON.parse(String(body))).toMatchObject({
-        autoPause: true,
-        autoPauseMemory: true,
-        autoResume: { enabled: true },
+        lifecycle: { onTimeout: "pause", autoResume: true },
       });
       return {
         statusCode: 201,

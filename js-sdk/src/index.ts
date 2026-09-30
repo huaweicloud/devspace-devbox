@@ -28,17 +28,12 @@ export {
   type FileInfo,
   FileType,
   type FileWatchEvent,
-  LogLevel,
-  LogsDirection,
   type Page,
   type ProcessInfo,
   type PtySize,
   type SandboxInfo,
   type SandboxLifecycle,
-  type SandboxLogEntry,
-  type SandboxMetrics,
   SandboxState,
-  type VolumeMount,
 } from "./models.js";
 export type { PtyStartOptions } from "./pty.js";
 export {

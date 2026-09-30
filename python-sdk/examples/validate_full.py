@@ -21,7 +21,6 @@ from devbox import (
     PtySize,
     Sandbox,
     SandboxInfo,
-    SandboxMetrics,
     ServiceUnavailableError,
 )
 from devbox.config import ConnectionConfig, gateway_verify_tls
@@ -154,11 +153,6 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
     validator.verify(
         "manager.refresh",
         lambda: _validate_refresh(sandbox),
-    )
-    validator.verify("manager.metrics", lambda: _step("sandbox.get_metrics()", sandbox.get_metrics))
-    validator.verify(
-        "manager.logs",
-        lambda: _step("sandbox.get_logs(limit=20)", lambda: sandbox.get_logs(limit=20)),
     )
     runtime_ready = validator.verify("runtime.ready", lambda: _validate_runtime(sandbox))
     if runtime_ready is None:
@@ -472,14 +466,6 @@ def _step(description: str, operation: Callable[[], T]) -> T:
         print(f"    result={result!r}", flush=True)
     elif isinstance(result, (list, tuple)):
         print(f"    items={len(result)}", flush=True)
-        if result and isinstance(result[-1], SandboxMetrics):
-            sample = result[-1]
-            print(
-                f"    sample_time={sample.timestamp_unix} | cpu_used={sample.cpu_used_percent}%"
-                f" | memory_used={sample.memory_used_bytes} bytes"
-                f" | disk_used={sample.disk_used_bytes} bytes",
-                flush=True,
-            )
     return result
 
 

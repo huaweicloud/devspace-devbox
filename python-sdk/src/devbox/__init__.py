@@ -28,17 +28,12 @@ from .models import (
     FileInfo,
     FileType,
     FileWatchEvent,
-    LogLevel,
-    LogsDirection,
     Page,
     ProcessInfo,
     PtySize,
     SandboxInfo,
     SandboxLifecycle,
-    SandboxLogEntry,
-    SandboxMetrics,
     SandboxState,
-    VolumeMount,
 )
 from .sandbox import AsyncSandbox, Sandbox
 
@@ -59,8 +54,6 @@ __all__ = [
     "FileType",
     "FileWatchEvent",
     "GitCredentials",
-    "LogLevel",
-    "LogsDirection",
     "NotFoundError",
     "Page",
     "PermissionDeniedError",
@@ -72,11 +65,8 @@ __all__ = [
     "Sandbox",
     "SandboxInfo",
     "SandboxLifecycle",
-    "SandboxLogEntry",
-    "SandboxMetrics",
     "SandboxState",
     "ServiceUnavailableError",
     "ValidationError",
-    "VolumeMount",
     "__version__",
 ]
