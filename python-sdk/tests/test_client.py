@@ -393,7 +393,7 @@ def test_lifecycle_uses_documented_paths_and_bodies() -> None:
 def test_lifecycle_timeout_supports_24_hours() -> None:
     assert _checked_timeout(7200) == 7200
     assert _checked_timeout(86400) == 86400
-    for invalid in (-1, 86401, 90000, True):
+    for invalid in (-1, 0, 9, 86401, 90000, True):
         with pytest.raises(ValueError, match="86400"):
             _checked_timeout(invalid)
 

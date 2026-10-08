@@ -780,8 +780,8 @@ def _mapping(value: object) -> Mapping[str, Any]:
 
 
 def _checked_timeout(timeout: int) -> int:
-    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 0 <= timeout <= 86400:
-        raise ValueError("timeout must be an integer between 0 and 86400 seconds")
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 10 <= timeout <= 86400:
+        raise ValueError("timeout must be an integer between 10 and 86400 seconds")
     return timeout
 
 
