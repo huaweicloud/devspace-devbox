@@ -105,6 +105,7 @@ class Sandboxes:
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
+
 class AsyncSandboxes:
     """Asynchronous sandbox lifecycle operations bound to a reusable client."""
 
@@ -182,6 +183,7 @@ class AsyncSandboxes:
             "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
+
 
 class Sandbox:
     """The main synchronous entry point for one remote sandbox.
