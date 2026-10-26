@@ -1,0 +1,12 @@
+# Build artifacts
+bin/
+/devbox
+*.exe
+
+# Editor
+.idea/
+.vscode/
+
+# Env
+.env
+*.log
