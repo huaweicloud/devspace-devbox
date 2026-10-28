@@ -32,9 +32,7 @@ def test_envd_reads_metrics_envs_and_health() -> None:
                 },
             )
         if request.url.path == "/envs":
-            return httpx.Response(
-                200, json={"DEVBOX_ID": "sbx-1", "DEVBOX_TEMPLATE_ID": "tpl-1"}
-            )
+            return httpx.Response(200, json={"DEVBOX_ID": "sbx-1", "DEVBOX_TEMPLATE_ID": "tpl-1"})
         assert request.url.path == "/health"
         return httpx.Response(204, headers={"X-Envd-Version": "1.2.3"})
 
