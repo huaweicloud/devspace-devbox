@@ -2,6 +2,11 @@ GO ?= go
 BIN=bin
 NAME=devbox
 
+# Version baked into the binary at build time.
+# Override per build: make build VERSION=v1.2.3
+# or manually: go build -ldflags "-X github.com/huaweicloud/devspace-devbox/cli/cmd.Version=v1.2.3" -o devbox.exe ./cmd/devbox
+VERSION ?= dev
+
 # API server URL baked into the binary at build time.
 # Override per build: make build API_SERVER_URL=https://...
 API_SERVER_URL ?= https://devbox-test.developer.myhuaweicloud.com
@@ -14,7 +19,7 @@ LOGIN_URL ?= https://devstation.connect.huaweicloud.com
 # Override per build: make build AUTH_CHECK_DOMAIN=https://...
 AUTH_CHECK_DOMAIN ?= https://bridge.developer.myhuaweicloud.com
 
-LDFLAGS := -X github.com/huaweicloud/devspace-devbox/cli/cmd.Version=$(shell git describe --tags --always 2>/dev/null || echo dev) \
+LDFLAGS := -X github.com/huaweicloud/devspace-devbox/cli/cmd.Version=$(VERSION) \
 	-X github.com/huaweicloud/devspace-devbox/cli/internal/config.DefaultServer=$(API_SERVER_URL) \
 	-X github.com/huaweicloud/devspace-devbox/cli/internal/config.LoginURL=$(LOGIN_URL) \
 	-X github.com/huaweicloud/devspace-devbox/cli/internal/config.AuthCheckDomain=$(AUTH_CHECK_DOMAIN)

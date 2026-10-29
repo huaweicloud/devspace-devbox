@@ -7,6 +7,7 @@ import (
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/auth"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -14,41 +15,36 @@ import (
 // authCmd 实现 `devbox auth`。
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Authenticate to the DevBox sandbox manager",
+	Short: i18n.T(i18n.Msg.Auth.AuthShort),
 }
 
 // loginCmd 实现 `devbox auth login`。
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "log in to CLI",
-	Long: `Log in to the DevBox sandbox manager.
-
-The API key is resolved in this order:
-  1. the --api-key flag (verified and stored)
-  2. a key already stored in the OS keyring or config file (verified)
-  3. an interactive browser login against the configured login page`,
-	Args: cobra.NoArgs,
+	Short: i18n.T(i18n.Msg.Auth.LoginShort),
+	Long:  i18n.T(i18n.Msg.Auth.LoginLong),
+	Args:  cobra.NoArgs,
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
 		apiKey, _ := cmd.Flags().GetString("api-key")
 
 		// 1. 显式 --api-key：校验后存储。
 		if apiKey != "" {
 			if err := auth.VerifyAPIKey(cmd.Context(), config.AuthCheckDomain, apiKey); err != nil {
-				return auth.LoginVerifyError("登录失败：", err)
+				return auth.LoginVerifyError(i18n.T(i18n.Msg.Auth.LoginFailed), err)
 			}
 			if err := auth.StoreCredential(&auth.Credential{APIKey: apiKey}, nil); err != nil {
 				return err
 			}
-			fmt.Println("登录成功")
+			fmt.Println(i18n.T(i18n.Msg.Auth.LoginSuccess))
 			return nil
 		}
 
 		// 2. 复用已有凭据（对齐 devbridge：环境变量 > keyring/配置文件），先校验。
 		if cred := auth.ReadValidAPIKey(); cred != nil && cred.APIKey != "" {
 			if err := auth.VerifyAPIKey(cmd.Context(), config.AuthCheckDomain, cred.APIKey); err != nil {
-				return auth.LoginVerifyError("登录失败：本地 API Key 校验未通过：", err)
+				return auth.LoginVerifyError(i18n.T(i18n.Msg.Auth.LoginVerifyFailed), err)
 			}
-			fmt.Println("登录成功（已复用本地保存的 API Key）")
+			fmt.Println(i18n.T(i18n.Msg.Auth.LoginReused))
 			return nil
 		}
 
@@ -60,13 +56,13 @@ The API key is resolved in this order:
 // logoutCmd 实现 `devbox auth logout`。
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "log out of CLI",
+	Short: i18n.T(i18n.Msg.Auth.LogoutShort),
 	Args:  cobra.NoArgs,
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
 		if err := auth.DeleteCredential(); err != nil {
 			return err
 		}
-		fmt.Println("已退出登录")
+		fmt.Println(i18n.T(i18n.Msg.Auth.LogoutSuccess))
 		return nil
 	}),
 }
@@ -74,12 +70,12 @@ var logoutCmd = &cobra.Command{
 // statusCmd 实现 `devbox auth status`。
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show the current login state",
+	Short: i18n.T(i18n.Msg.Auth.StatusShort),
 	Args:  cobra.NoArgs,
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
 		cred, err := auth.LoadCredential()
 		if err != nil {
-			fmt.Println("未登录")
+			fmt.Println(i18n.T(i18n.Msg.Auth.NotLoggedIn))
 			return nil
 		}
 
@@ -87,15 +83,15 @@ var statusCmd = &cobra.Command{
 		defer cancel()
 		if err := auth.VerifyAPIKey(ctx, config.AuthCheckDomain, cred.APIKey); err != nil {
 			if auth.IsUnauthorized(err) {
-				fmt.Println("未登录（本地 API Key 已失效，请运行 devbox auth login）")
+				fmt.Println(i18n.T(i18n.Msg.Auth.CredInvalidHint))
 				return nil
 			}
-			fmt.Printf("已登录，但校验失败：%v\n", err)
+			fmt.Printf(i18n.T(i18n.Msg.Auth.StatusVerifyFailed)+"\n", err)
 			return nil
 		}
-		fmt.Println("已登录")
+		fmt.Println(i18n.T(i18n.Msg.Auth.LoggedIn))
 		if ui, err := auth.LoadUserInfo(); err == nil && ui != nil && ui.UserName != "" {
-			fmt.Printf("用户名: %s\n", ui.UserName)
+			fmt.Printf(i18n.T(i18n.Msg.Auth.UserName)+"\n", ui.UserName)
 		}
 		return nil
 	}),
@@ -103,7 +99,7 @@ var statusCmd = &cobra.Command{
 
 func init() {
 	loginCmd.Flags().String("api-key", "",
-		"API key to verify and store (env "+config.EnvAPIKey+")")
+		i18n.T(i18n.Msg.Auth.APIKeyFlag)+" ("+config.EnvAPIKey+")")
 
 	authCmd.AddCommand(loginCmd, logoutCmd, statusCmd)
 }

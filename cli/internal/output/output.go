@@ -25,15 +25,16 @@ const (
 	FormatJSON Format = "json"
 )
 
-// ParseFormat validates/normalises --output values.
+// ParseFormat validates/normalises --format values. "pretty" is an alias of
+// text (e2b-compatible flag values).
 func ParseFormat(s string) (Format, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "text", "table":
+	case "", "text", "table", "pretty":
 		return FormatText, nil
 	case "json":
 		return FormatJSON, nil
 	default:
-		return "", fmt.Errorf("unknown output format %q (supported: text, json)", s)
+		return "", fmt.Errorf("unknown output format %q (supported: pretty, json)", s)
 	}
 }
 

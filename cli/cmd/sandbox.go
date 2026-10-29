@@ -17,18 +17,41 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api/processgen/process"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/client"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/envd"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/term"
 
 	"github.com/spf13/cobra"
 )
 
+// validateTimeoutSeconds 校验 timeout/duration 入参：合法范围 10-86400 秒，
+// 显式传 0 视为无效（与省略互不混淆）。
+func validateTimeoutSeconds(v int32) error {
+	if v < 10 || v > 86400 {
+		return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidTimeout), v)
+	}
+	return nil
+}
+
+// validateSandboxID 校验 sandboxID 入参：小写英文、数字、中划线，长度 36。
+func validateSandboxID(s string) error {
+	if len(s) != 36 {
+		return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidSandboxID), s)
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidSandboxID), s)
+		}
+	}
+	return nil
+}
+
 // sandboxCmd 实现 `devbox sandbox`。
 var sandboxCmd = &cobra.Command{
 	// Use 里的 "sandbox|sbx" 仅用于帮助展示；命令匹配靠 Aliases。
 	Use:     "sandbox|sbx",
 	Aliases: []string{"sandbox", "sbx"},
-	Short:   "work with sandboxes",
+	Short:   i18n.T(i18n.Msg.Sandbox.SandboxShort),
 }
 
 // sandboxCreateCmd 的 flag 绑定变量。
@@ -57,6 +80,9 @@ var sandboxCreateCmd = &cobra.Command{
 		}
 		req := api.NewSandbox{TemplateID: args[0]}
 		if cmd.Flags().Changed("timeout") {
+			if err := validateTimeoutSeconds(sandboxCreateTimeout); err != nil {
+				return err
+			}
 			req.Timeout = pInt32(sandboxCreateTimeout)
 		}
 		if cmd.Flags().Changed("build-id") {
@@ -74,14 +100,14 @@ var sandboxCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("lifecycle.ontimeout") {
 			ot := api.SandboxLifecycleOnTimeout(sandboxCreateOnTimeout)
 			if !ot.Valid() {
-				return fmt.Errorf("invalid --lifecycle.ontimeout %q (supported: pause, kill)", sandboxCreateOnTimeout)
+				return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidOnTimeout), sandboxCreateOnTimeout)
 			}
 			if sandboxCreateAutoResume && sandboxCreateOnTimeout != "pause" {
-				return fmt.Errorf("--lifecycle.autoresume requires --lifecycle.ontimeout pause")
+				return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.AutoResumeRequires))
 			}
 			req.Lifecycle = &api.SandboxLifecycle{OnTimeout: ot, AutoResume: sandboxCreateAutoResume}
 		} else if cmd.Flags().Changed("lifecycle.autoresume") {
-			return fmt.Errorf("--lifecycle.autoresume requires --lifecycle.ontimeout pause")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.AutoResumeRequires))
 		}
 
 		sb, err := c.CreateSandbox(cmd.Context(), api.CreateSandboxJSONRequestBody(req))
@@ -97,41 +123,41 @@ var sandboxCreateCmd = &cobra.Command{
 
 		// 默认：进入交互式终端。
 		if sb.Domain == nil || *sb.Domain == "" {
-			return fmt.Errorf("sandbox response does not include a domain")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingDomain))
 		}
 		if sb.ConnectToken == nil || *sb.ConnectToken == "" {
-			return fmt.Errorf("sandbox response does not include a connect token")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
 		}
 		ec, err := envd.New(*sb.Domain, sb.SandboxID, *sb.ConnectToken, nil)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Connecting to sandbox %s (type 'exit' to leave)\n", sb.SandboxID)
-		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxCreateCwd).Run(cmd.Context())
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
+		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxCreateCwd, envMap).Run(cmd.Context())
 		if err != nil {
 			return err
 		}
 		if end != nil && end.ExitCode != 0 {
-			fmt.Printf("Remote shell exited (exit_code=%d, status=%s)\n", end.ExitCode, end.Status)
+			fmt.Printf(i18n.T(i18n.Msg.Sandbox.RemoteShellExited)+"\n", end.ExitCode, end.Status)
 		}
-		fmt.Printf("Closing terminal connection to sandbox %s\n", sb.SandboxID)
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.ClosingConnection)+"\n", sb.SandboxID)
 		return nil
 	}),
 }
 
 // sandboxListCmd 的 flag 绑定变量。
 var (
-	sandboxListMetadata  string
-	sandboxListStates    []string
-	sandboxListNextToken string
-	sandboxListLimit     int32
+	sandboxListMetadata string
+	sandboxListStates   []string
+	sandboxListLimit    int32
+	sandboxListFormat   string
 )
 
 // sandboxListCmd 实现 `devbox sandbox list`，对应 GET /sandboxes。
 var sandboxListCmd = &cobra.Command{
 	Use:     "list|ls",
 	Aliases: []string{"list", "ls"},
-	Short:   "List sandboxes",
+	Short:   i18n.T(i18n.Msg.Sandbox.ListShort),
 	Args:    cobra.NoArgs,
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
 		c, err := newClient(cmd)
@@ -139,21 +165,21 @@ var sandboxListCmd = &cobra.Command{
 			return err
 		}
 		params := &api.ListSandboxesParams{
-			Metadata:  optString(sandboxListMetadata),
-			NextToken: optString(sandboxListNextToken),
+			Metadata: optString(sandboxListMetadata),
 		}
 		if cmd.Flags().Changed("state") {
 			states := make([]api.SandboxState, 0, len(sandboxListStates))
 			for _, s := range sandboxListStates {
 				st := api.SandboxState(s)
 				if !st.Valid() {
-					return fmt.Errorf("invalid state %q (supported: running, paused)", s)
+					return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidState), s)
 				}
 				states = append(states, st)
 			}
 			params.State = &states
 		}
-		if cmd.Flags().Changed("limit") {
+		// 对齐 e2b：默认 1000，0 表示不限制（不发送 limit 参数）。
+		if sandboxListLimit != 0 {
 			params.Limit = pInt(sandboxListLimit)
 		}
 
@@ -162,7 +188,7 @@ var sandboxListCmd = &cobra.Command{
 			return err
 		}
 		if len(res.Sandboxes) == 0 && out(cmd) == output.FormatText {
-			fmt.Println("No sandboxes found")
+			fmt.Println(i18n.T(i18n.Msg.Sandbox.ListEmpty))
 			return nil
 		}
 		rows := make([][]string, 0, len(res.Sandboxes))
@@ -181,25 +207,27 @@ var sandboxListCmd = &cobra.Command{
 		}
 		if err := output.Print(cmd.OutOrStdout(), out(cmd), output.Spec{
 			JSON:    res.Sandboxes,
-			Headers: []string{"SANDBOX ID", "TEMPLATE ID", "STARTED AT", "END AT", "STATE", "VCPU", "RAM(MB)", "DISK(MB)", "METADATA"},
+			Headers: []string{"SANDBOX ID", "TEMPLATE ID", "STARTED AT", "END AT", "STATE", "VCPUS", "RAM(MB)", "DISK(MB)", "METADATA"},
 			Rows:    rows,
 		}); err != nil {
 			return err
-		}
-		if res.NextToken != "" && out(cmd) == output.FormatText {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "next token: %s (pass back with --next-token)\n", res.NextToken)
 		}
 		return nil
 	}),
 }
 
 // sandboxInfoCmd 实现 `devbox sandbox info <sandboxID>`，对应 GET /sandboxes/{id}。
+var sandboxInfoFormat string
+
 var sandboxInfoCmd = &cobra.Command{
 	Use:     "info|in <sandboxID>",
 	Aliases: []string{"info", "in"},
-	Short:   "show information for a sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.InfoShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
@@ -212,9 +240,9 @@ var sandboxInfoCmd = &cobra.Command{
 			{Key: "Sandbox ID", Value: sb.SandboxID},
 			{Key: "Template ID", Value: sb.TemplateID},
 			{Key: "State", Value: string(sb.State)},
-			{Key: "Started At", Value: formatTime(sb.StartedAt)},
-			{Key: "Ended At", Value: formatTimePtr(sb.EndAt)},
-			{Key: "VCPU", Value: strconv.Itoa(int(sb.CpuCount))},
+			{Key: "Started at", Value: formatTime(sb.StartedAt)},
+			{Key: "End at", Value: formatTimePtr(sb.EndAt)},
+			{Key: "vCPUs", Value: strconv.Itoa(int(sb.CpuCount))},
 			{Key: "RAM(MB)", Value: strconv.Itoa(int(sb.MemoryMB))},
 			{Key: "Disk(MB)", Value: strconv.Itoa(int(sb.DiskSizeMB))},
 			{Key: "Lifecycle", Value: formatJSON(sb.Lifecycle)},
@@ -230,9 +258,12 @@ var sandboxInfoCmd = &cobra.Command{
 var sandboxKillCmd = &cobra.Command{
 	Use:     "kill|kl <sandboxID>",
 	Aliases: []string{"kill", "kl"},
-	Short:   "Kill a sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.KillShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
@@ -240,7 +271,7 @@ var sandboxKillCmd = &cobra.Command{
 		if err := c.DeleteSandbox(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Printf("sandbox %s has been killed\n", args[0])
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.Killed)+"\n", args[0])
 		return nil
 	}),
 }
@@ -252,9 +283,12 @@ var sandboxResumeTimeout int32
 var sandboxPauseCmd = &cobra.Command{
 	Use:     "pause|ps <sandboxID>",
 	Aliases: []string{"pause", "ps"},
-	Short:   "Pause a sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.PauseShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
@@ -262,7 +296,7 @@ var sandboxPauseCmd = &cobra.Command{
 		if err := c.PauseSandbox(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Printf("sandbox %s has been paused\n", args[0])
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.Paused)+"\n", args[0])
 		return nil
 	}),
 }
@@ -271,31 +305,40 @@ var sandboxPauseCmd = &cobra.Command{
 var sandboxResumeCmd = &cobra.Command{
 	Use:     "resume|rs <sandboxID>",
 	Aliases: []string{"resume", "rs"},
-	Short:   "Resume a paused sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.ResumeShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
 		}
-		sb, err := c.ResumeSandbox(cmd.Context(), args[0], api.ResumeSandboxJSONRequestBody(api.TimeoutOption{
-			Timeout: pInt32(sandboxResumeTimeout),
-		}))
+		// 省略 -t 时不上送 timeout 字段（保持沙箱当前 TTL）；显式传值才校验并设置。
+		opt := api.TimeoutOption{}
+		if cmd.Flags().Changed("timeout") {
+			if err := validateTimeoutSeconds(sandboxResumeTimeout); err != nil {
+				return err
+			}
+			opt.Timeout = pInt32(sandboxResumeTimeout)
+		}
+		_, err = c.ResumeSandbox(cmd.Context(), args[0], api.ResumeSandboxJSONRequestBody(opt))
 		if err != nil {
 			return err
 		}
-		return output.Print(cmd.OutOrStdout(), out(cmd), output.Spec{
-			JSON: sb,
-			KV: []output.KV{
-				{Key: "Sandbox ID", Value: sb.SandboxID},
-				{Key: "State", Value: string(sb.State)},
-			},
-		})
+		// 对齐 e2b：单行展示，不打印字段。
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.Resumed)+"\n", args[0])
+		return nil
 	}),
 }
 
 // sandboxConnectCmd 的 flag 绑定变量。
-var sandboxConnectTimeout int32
+var (
+	sandboxConnectTimeout int32
+	sandboxConnectCwd     string
+	sandboxConnectEnv     []string
+)
 
 // sandboxConnectCmd 实现 `devbox sandbox connect <sandboxID>`，对应 POST /sandboxes/{id}/connect。
 // 获取连接凭证后进入交互式终端（对齐 e2b 的 connect 行为）：本地终端成为
@@ -303,38 +346,51 @@ var sandboxConnectTimeout int32
 var sandboxConnectCmd = &cobra.Command{
 	Use:     "connect|cn <sandboxID>",
 	Aliases: []string{"connect", "cn"},
-	Short:   "Open an interactive terminal to a sandbox, resuming it if paused",
+	Short:   i18n.T(i18n.Msg.Sandbox.ConnectShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
 		}
-		sb, err := c.ConnectSandbox(cmd.Context(), args[0], api.ConnectSandboxJSONRequestBody(api.TimeoutOption{
-			Timeout: pInt32(sandboxConnectTimeout),
-		}))
+		// 省略 -t 时不上送 timeout 字段（保持沙箱当前 TTL）；显式传值才校验并设置。
+		opt := api.TimeoutOption{}
+		if cmd.Flags().Changed("timeout") {
+			if err := validateTimeoutSeconds(sandboxConnectTimeout); err != nil {
+				return err
+			}
+			opt.Timeout = pInt32(sandboxConnectTimeout)
+		}
+		sb, err := c.ConnectSandbox(cmd.Context(), args[0], api.ConnectSandboxJSONRequestBody(opt))
 		if err != nil {
 			return err
 		}
 		if sb.Domain == nil || *sb.Domain == "" {
-			return fmt.Errorf("sandbox response does not include a domain")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingDomain))
 		}
 		if sb.ConnectToken == nil || *sb.ConnectToken == "" {
-			return fmt.Errorf("sandbox response does not include a connect token")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
 		}
 		ec, err := envd.New(*sb.Domain, sb.SandboxID, *sb.ConnectToken, nil)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Connecting to sandbox %s (type 'exit' to leave)\n", sb.SandboxID)
-		end, err := term.New(ec, os.Stdin, os.Stdout, "").Run(cmd.Context())
+		envMap, err := parseKV(sandboxConnectEnv)
+		if err != nil {
+			return fmt.Errorf("invalid --env: %w", err)
+		}
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
+		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxConnectCwd, envMap).Run(cmd.Context())
 		if err != nil {
 			return err
 		}
 		if end != nil && end.ExitCode != 0 {
-			fmt.Printf("Remote shell exited (exit_code=%d, status=%s)\n", end.ExitCode, end.Status)
+			fmt.Printf(i18n.T(i18n.Msg.Sandbox.RemoteShellExited)+"\n", end.ExitCode, end.Status)
 		}
-		fmt.Printf("Closing terminal connection to sandbox %s\n", sb.SandboxID)
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.ClosingConnection)+"\n", sb.SandboxID)
 		return nil
 	}),
 }
@@ -346,19 +402,28 @@ var sandboxTimeoutValue int32
 var sandboxTimeoutCmd = &cobra.Command{
 	Use:     "timeout|to <sandboxID>",
 	Aliases: []string{"timeout", "to"},
-	Short:   "Set the time-to-live of a sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.TimeoutShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
+		}
+		// -t 非必传：省略时使用默认值 300；显式传值时做范围校验（10-86400）。
+		if cmd.Flags().Changed("timeout") {
+			if err := validateTimeoutSeconds(sandboxTimeoutValue); err != nil {
+				return err
+			}
 		}
 		if err := c.SetSandboxTimeout(cmd.Context(), args[0], api.SetSandboxTimeoutJSONRequestBody(api.TimeoutOption{
 			Timeout: pInt32(sandboxTimeoutValue),
 		})); err != nil {
 			return err
 		}
-		fmt.Printf("sandbox %s timeout set to %ds\n", args[0], sandboxTimeoutValue)
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.TimeoutSet)+"\n", args[0], sandboxTimeoutValue)
 		return nil
 	}),
 }
@@ -370,19 +435,28 @@ var sandboxRefreshDuration int32
 var sandboxRefreshCmd = &cobra.Command{
 	Use:     "refresh|rf <sandboxID>",
 	Aliases: []string{"refresh", "rf"},
-	Short:   "Extend the lifetime of a sandbox",
+	Short:   i18n.T(i18n.Msg.Sandbox.RefreshShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
+		}
+		// -d 非必传：省略时使用默认值 300；显式传值时做范围校验（10-86400）。
+		if cmd.Flags().Changed("duration") {
+			if err := validateTimeoutSeconds(sandboxRefreshDuration); err != nil {
+				return err
+			}
 		}
 		if err := c.RefreshSandbox(cmd.Context(), args[0], api.RefreshSandboxJSONRequestBody(api.RefreshSandboxJSONBody{
 			Duration: sandboxRefreshDuration,
 		})); err != nil {
 			return err
 		}
-		fmt.Printf("sandbox %s lifetime extended by %ds\n", args[0], sandboxRefreshDuration)
+		fmt.Printf(i18n.T(i18n.Msg.Sandbox.Refreshed)+"\n", args[0], sandboxRefreshDuration)
 		return nil
 	}),
 }
@@ -401,15 +475,13 @@ var (
 var sandboxExecCmd = &cobra.Command{
 	Use:     "exec|ex <sandboxID> <command...>",
 	Aliases: []string{"exec", "ex"},
-	Short:   "Execute a command in a running sandbox",
-	Long: `Execute a command in a running sandbox.
-
-Everything after the sandbox ID is passed through to the remote command,
-so devbox options must come before the sandbox ID:
-
-  devbox sbx exec -c /tmp <sandboxID> codex exec "prompt" --help`,
-	Args: cobra.MinimumNArgs(2),
+	Short:   i18n.T(i18n.Msg.Sandbox.ExecShort),
+	Long:    i18n.T(i18n.Msg.Sandbox.ExecLong),
+	Args:    cobra.MinimumNArgs(2),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateSandboxID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
@@ -428,10 +500,10 @@ so devbox options must come before the sandbox ID:
 			return err
 		}
 		if sb.Domain == nil || *sb.Domain == "" {
-			return fmt.Errorf("sandbox response does not include a domain")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingDomain))
 		}
 		if sb.ConnectToken == nil || *sb.ConnectToken == "" {
-			return fmt.Errorf("sandbox response does not include a connect token")
+			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
 		}
 		pc, err := client.NewProcessClient(*sb.Domain, args[0], *sb.ConnectToken, nil)
 		if err != nil {
@@ -511,7 +583,7 @@ func execBackground(cmd *cobra.Command, pc *client.ProcessClient, stream *connec
 		return err
 	}
 	if pid == 0 {
-		return fmt.Errorf("sandbox did not return a process id")
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.NoProcessID))
 	}
 	if piped {
 		streamLocalStdin(cmd.Context(), pc, pid)
@@ -581,7 +653,7 @@ func buildRemoteCommand(args []string) (string, error) {
 		args = args[1:]
 	}
 	if len(args) == 0 {
-		return "", fmt.Errorf("missing command to execute")
+		return "", fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingCommand))
 	}
 	if len(args) == 1 {
 		return args[0], nil
@@ -622,49 +694,55 @@ func pipedStdin() bool {
 
 func init() {
 	sandboxCreateCmd.Flags().Int32VarP(&sandboxCreateTimeout, "timeout", "t", 300,
-		"Time to live for the sandbox in seconds (10-86400)")
+		i18n.T(i18n.Msg.Sandbox.FlagTimeout))
 	sandboxCreateCmd.Flags().StringArrayVarP(&sandboxCreateMetadata, "metadata", "m", nil,
-		"Metadata key=value (repeatable)")
+		i18n.T(i18n.Msg.Sandbox.FlagMetadata))
 	sandboxCreateCmd.Flags().StringArrayVarP(&sandboxCreateEnv, "env", "e", nil,
-		"Environment variable key=value (repeatable)")
+		i18n.T(i18n.Msg.Sandbox.FlagEnv))
 	sandboxCreateCmd.Flags().StringVarP(&sandboxCreateBuildID, "build-id", "b", "",
-		"Template build identifier")
+		i18n.T(i18n.Msg.Sandbox.FlagBuildID))
 	sandboxCreateCmd.Flags().StringVar(&sandboxCreateOnTimeout, "lifecycle.ontimeout", "",
-		"Action when sandbox timeout is reached: pause or kill")
+		i18n.T(i18n.Msg.Sandbox.FlagOnTimeout))
 	sandboxCreateCmd.Flags().BoolVar(&sandboxCreateAutoResume, "lifecycle.autoresume", false,
-		"Enable sandbox auto-resume, requires --lifecycle.ontimeout pause")
+		i18n.T(i18n.Msg.Sandbox.FlagAutoResume))
 	sandboxCreateCmd.Flags().BoolVarP(&sandboxCreateDetach, "detach", "d", false,
-		"Create the sandbox without connecting to its terminal")
+		i18n.T(i18n.Msg.Sandbox.FlagDetach))
 	sandboxCreateCmd.Flags().StringVarP(&sandboxCreateCwd, "cwd", "c", "",
-		"Working directory for the terminal session inside the sandbox")
+		i18n.T(i18n.Msg.Sandbox.FlagCwd))
 
 	sandboxListCmd.Flags().StringVarP(&sandboxListMetadata, "metadata", "m", "",
-		`Metadata filter, e.g. "user=abc&app=prod"`)
+		`i18n.T(i18n.Msg.Sandbox.FlagMetadataFilter)`)
 	sandboxListCmd.Flags().StringSliceVarP(&sandboxListStates, "state", "s", nil,
-		"Filter by state: running or paused (repeatable)")
-	sandboxListCmd.Flags().StringVarP(&sandboxListNextToken, "next-token", "n", "",
-		"Pagination cursor")
-	sandboxListCmd.Flags().Int32VarP(&sandboxListLimit, "limit", "l", 0,
-		"Maximum number of results (1-100)")
+		i18n.T(i18n.Msg.Sandbox.FlagState))
+	sandboxListCmd.Flags().Int32VarP(&sandboxListLimit, "limit", "l", 100,
+		i18n.T(i18n.Msg.Sandbox.FlagLimit))
+	sandboxListCmd.Flags().StringVarP(&sandboxListFormat, "format", "f", "pretty",
+		i18n.T(i18n.Msg.Sandbox.FlagFormat))
 
-	sandboxResumeCmd.Flags().Int32Var(&sandboxResumeTimeout, "timeout", 300,
-		"New time to live in seconds (10-86400)")
+	sandboxResumeCmd.Flags().Int32VarP(&sandboxResumeTimeout, "timeout", "t", 300,
+		i18n.T(i18n.Msg.Sandbox.FlagTimeoutKeep))
 
-	sandboxConnectCmd.Flags().Int32Var(&sandboxConnectTimeout, "timeout", 300,
-		"Time to live in seconds (10-86400)")
+	sandboxConnectCmd.Flags().Int32VarP(&sandboxConnectTimeout, "timeout", "t", 300,
+		i18n.T(i18n.Msg.Sandbox.FlagTimeoutKeep))
+	sandboxConnectCmd.Flags().StringVarP(&sandboxConnectCwd, "cwd", "c", "",
+		i18n.T(i18n.Msg.Sandbox.FlagCwd))
+	sandboxConnectCmd.Flags().StringArrayVarP(&sandboxConnectEnv, "env", "e", nil,
+		i18n.T(i18n.Msg.Sandbox.FlagEnvTerm))
 
 	sandboxTimeoutCmd.Flags().Int32VarP(&sandboxTimeoutValue, "timeout", "t", 300,
-		"New time to live in seconds (10-86400)")
+		i18n.T(i18n.Msg.Sandbox.FlagNewTimeout))
+	sandboxInfoCmd.Flags().StringVarP(&sandboxInfoFormat, "format", "f", "pretty",
+		i18n.T(i18n.Msg.Sandbox.FlagFormat))
 
 	sandboxRefreshCmd.Flags().Int32VarP(&sandboxRefreshDuration, "duration", "d", 300,
-		"Lifetime extension in seconds (10-86400)")
+		i18n.T(i18n.Msg.Sandbox.FlagDuration))
 
 	sandboxExecCmd.Flags().BoolVarP(&sandboxExecBackground, "background", "b", false,
-		"Run in background and return immediately")
+		i18n.T(i18n.Msg.Sandbox.FlagBackground))
 	sandboxExecCmd.Flags().StringVarP(&sandboxExecCwd, "cwd", "c", "",
-		"Working directory for the remote command")
+		i18n.T(i18n.Msg.Sandbox.FlagCwd))
 	sandboxExecCmd.Flags().StringArrayVarP(&sandboxExecEnv, "env", "e", nil,
-		"Environment variable key=value (repeatable)")
+		i18n.T(i18n.Msg.Sandbox.FlagEnv))
 	// sandbox ID 之后的内容全部透传给远程命令。
 	sandboxExecCmd.Flags().SetInterspersed(false)
 

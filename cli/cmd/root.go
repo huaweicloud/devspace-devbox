@@ -13,6 +13,7 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/auth"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/client"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
 
 	"github.com/spf13/cobra"
@@ -23,22 +24,12 @@ var Version = "dev"
 
 // RootCmd 是所有子命令的根。
 var RootCmd = &cobra.Command{
-	Use:   "devbox",
-	Short: "CLI for the DevBox sandbox manager",
-	Long: `devbox is a command-line client for the DevBox Sandbox Manager API.
-
-It covers the full sandbox lifecycle (create, list, info, kill, logs,
-metrics, pause, resume, connect) and templates.
-
-Configuration is resolved in this order:
-  1. flags                --api-key (auth login)
-  2. environment          HW_DEVBOX_API_KEY
-  3. config file          ~/.devbox/config.json
-  4. build-time default   API server URL injected via Makefile, currently ` + config.DefaultServer + `
-`,
+	Use:     "devbox",
+	Short:   i18n.T(i18n.Msg.Common.RootShort),
+	Long:    i18n.T(i18n.Msg.Common.RootLong) + config.DefaultServer + "\n",
 	Version: Version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if f := cmd.Flags().Lookup("output"); f != nil {
+		if f := cmd.Flags().Lookup("format"); f != nil {
 			if _, err := output.ParseFormat(f.Value.String()); err != nil {
 				return err
 			}
@@ -53,7 +44,10 @@ Configuration is resolved in this order:
 func init() {
 	// 全局 verbose 开关（-v）：开启后打印 debug 日志（含接口请求/返回）。
 	// 注册 -v 后，cobra 的 --version 旗标不再占用 -v 简写。
-	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "print debug logs (API requests/responses)")
+	RootCmd.PersistentFlags().BoolP("verbose", "v", false, i18n.T(i18n.Msg.Common.FlagVerbose))
+
+	// --version 只输出版本号本身（默认模板会带 "devbox.exe version " 前缀）。
+	RootCmd.SetVersionTemplate("{{.Version}}\n")
 
 	RootCmd.AddCommand(authCmd, sandboxCmd, templateCmd)
 }
@@ -86,9 +80,9 @@ func newClient(cmd *cobra.Command) (*client.Client, error) {
 	return client.New(config.DefaultServer, apiKey, &http.Client{Timeout: timeout})
 }
 
-// out 返回当前命令 --output 对应的格式（未注册或非法时按 text 处理）。
+// out 返回当前命令 --format 对应的格式（未注册或非法时按 pretty/text 处理）。
 func out(cmd *cobra.Command) output.Format {
-	f, err := cmd.Flags().GetString("output")
+	f, err := cmd.Flags().GetString("format")
 	if err != nil {
 		return output.FormatText
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/cli/browser"
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // LoginSession runs a local callback server and hands the API key back after
@@ -190,7 +191,7 @@ func apikeyPageURL() string {
 func BrowserLogin(ctx context.Context) error {
 	loginBase := config.LoginURL
 	if loginBase == "" {
-		return fmt.Errorf("未配置登录页地址：请通过构建期注入设置（-ldflags -X .../internal/config.LoginURL=...）")
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Auth.LoginURLNotSet))
 	}
 	session, err := StartLogin(loginBase)
 	if err != nil {
@@ -199,21 +200,21 @@ func BrowserLogin(ctx context.Context) error {
 	defer session.Close()
 
 	if session.BrowserOpened {
-		fmt.Println("已在浏览器中打开登录页，请完成登录...")
+		fmt.Println(i18n.T(i18n.Msg.Auth.BrowserOpened))
 	} else {
 		// 对齐 devbridge：无浏览器时直接报错，引导用户到 API Key 管理页面。
-		return fmt.Errorf("无可用浏览器，请手动登录。API Key 管理页面: %s\n例如: ./devbox auth login --api-key=YOUR_API_KEY", apikeyPageURL())
+		return fmt.Errorf(i18n.T(i18n.Msg.Auth.NoBrowserHint), apikeyPageURL())
 	}
 
 	loginCtx, cancel := context.WithTimeout(ctx, LoginTimeout)
 	defer cancel()
 	key, err := session.Wait(loginCtx)
 	if err != nil {
-		return fmt.Errorf("登录失败：%w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Auth.LoginFailed)+"%w", err)
 	}
 
 	if err := VerifyAPIKey(ctx, config.AuthCheckDomain, key); err != nil {
-		return LoginVerifyError("登录失败：获取到的 API Key 无效：", err)
+		return LoginVerifyError(i18n.T(i18n.Msg.Auth.LoginKeyInvalid), err)
 	}
 	ui, uiErr := LoadUserInfo()
 	if uiErr != nil || ui == nil {
@@ -225,14 +226,14 @@ func BrowserLogin(ctx context.Context) error {
 			return err
 		}
 	}
-	fmt.Println("登录成功")
+	fmt.Println(i18n.T(i18n.Msg.Auth.LoginSuccess))
 	return nil
 }
 
 // LoginVerifyError 包装登录校验失败错误：401 时给出统一提示。
 func LoginVerifyError(prefix string, err error) error {
 	if IsUnauthorized(err) {
-		return fmt.Errorf("登录失败：API Key 无效或已被禁用")
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Auth.LoginAPIKeyInvalid))
 	}
 	return fmt.Errorf(prefix+"%w", err)
 }

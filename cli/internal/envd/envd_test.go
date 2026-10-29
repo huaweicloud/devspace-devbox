@@ -79,7 +79,7 @@ func TestStartPTYAndSendInput(t *testing.T) {
 		t.Fatalf("expected a tunnel port for the httptest URL")
 	}
 
-	stream, pid, err := c.StartPTY(context.Background(), 120, 30, "")
+	stream, pid, err := c.StartPTY(context.Background(), 120, 30, "", nil)
 	if err != nil {
 		t.Fatalf("start pty: %v", err)
 	}

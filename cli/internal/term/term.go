@@ -21,19 +21,20 @@ const maxStartAttempts = 3
 
 // Session runs one interactive terminal against a sandbox PTY.
 type Session struct {
-	ec  *envd.Client
-	in  *os.File
-	out *os.File
-	cwd string
+	ec   *envd.Client
+	in   *os.File
+	out  *os.File
+	cwd  string
+	envs map[string]string
 
 	sawOutput bool
 }
 
 // New builds a Session wired to the given envd client and local files
 // (typically os.Stdin and os.Stdout). An empty cwd uses the sandbox default
-// working directory.
-func New(ec *envd.Client, in, out *os.File, cwd string) *Session {
-	return &Session{ec: ec, in: in, out: out, cwd: cwd}
+// working directory; envs are terminal-session environment variables.
+func New(ec *envd.Client, in, out *os.File, cwd string, envs map[string]string) *Session {
+	return &Session{ec: ec, in: in, out: out, cwd: cwd, envs: envs}
 }
 
 // Run starts the remote shell and pumps input/output until the shell exits
@@ -92,7 +93,7 @@ func (s *Session) runOnce(ctx context.Context, cols, rows int) (*envd.EndEvent, 
 	errCh := make(chan error, 2)
 	endCh := make(chan *envd.EndEvent, 1)
 
-	stream, pid, err := s.ec.StartPTY(ctx, cols, rows, s.cwd)
+	stream, pid, err := s.ec.StartPTY(ctx, cols, rows, s.cwd, s.envs)
 	if err != nil {
 		return nil, err
 	}

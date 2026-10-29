@@ -124,13 +124,26 @@ type EndEvent struct {
 
 // StartPTY starts an interactive login shell with a PTY of the given size and
 // returns the event stream plus the PID of the remote process. An empty cwd
-// uses the sandbox default working directory.
-func (c *Client) StartPTY(ctx context.Context, cols, rows int, cwd string) (*EventStream, uint32, error) {
+// uses the sandbox default working directory; envs are terminal-session
+// environment variables (TERM/LANG/LC_ALL default to e2b's values).
+func (c *Client) StartPTY(ctx context.Context, cols, rows int, cwd string, envs map[string]string) (*EventStream, uint32, error) {
+	if envs == nil {
+		envs = map[string]string{}
+	}
+	if _, ok := envs["TERM"]; !ok {
+		envs["TERM"] = "xterm-256color"
+	}
+	if _, ok := envs["LANG"]; !ok {
+		envs["LANG"] = "C.UTF-8"
+	}
+	if _, ok := envs["LC_ALL"]; !ok {
+		envs["LC_ALL"] = "C.UTF-8"
+	}
 	payload, err := json.Marshal(startRequest{
 		Process: &processConfig{
 			Cmd:  "/bin/bash",
 			Args: []string{"-i", "-l"},
-			Envs: map[string]string{"TERM": "xterm-256color"},
+			Envs: envs,
 			Cwd:  cwd,
 		},
 		Stdin: true,
