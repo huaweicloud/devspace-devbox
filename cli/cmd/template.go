@@ -45,7 +45,7 @@ var templateListCmd = &cobra.Command{
 			rows = append(rows, []string{
 				t.TemplateID,
 				t.Name,
-				joinList(t.Aliases),
+				output.JoinList(t.Aliases),
 				t.BuildID,
 				strconv.Itoa(int(t.CpuCount)),
 				strconv.Itoa(int(t.MemoryMB)),

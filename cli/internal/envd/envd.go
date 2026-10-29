@@ -23,6 +23,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 const (
@@ -63,20 +65,20 @@ type Client struct {
 // streams run indefinitely.
 func New(domain, sandboxID, connectToken string, httpClient *http.Client) (*Client, error) {
 	if strings.TrimSpace(domain) == "" {
-		return nil, fmt.Errorf("envd: empty domain")
+		return nil, fmt.Errorf("%s", i18n.T(i18n.Msg.EnvD.EmptyDomain))
 	}
 	if strings.TrimSpace(connectToken) == "" {
-		return nil, fmt.Errorf("envd: empty connect token")
+		return nil, fmt.Errorf("%s", i18n.T(i18n.Msg.EnvD.EmptyConnectToken))
 	}
 	u, err := url.Parse(domain)
 	if err != nil {
-		return nil, fmt.Errorf("envd: invalid domain %q: %w", domain, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.InvalidDomain), domain, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("envd: invalid domain %q: expected http(s)://host", domain)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.InvalidDomainScheme), domain)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("envd: invalid domain %q: missing host", domain)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.InvalidDomainHost), domain)
 	}
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -150,7 +152,7 @@ func (c *Client) StartPTY(ctx context.Context, cols, rows int, cwd string, envs 
 		PTY:   &ptyOptions{Size: &ptySize{Cols: cols, Rows: rows}},
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("envd: encode start body: %w", err)
+		return nil, 0, fmt.Errorf(i18n.T(i18n.Msg.EnvD.EncodeStartBody), err)
 	}
 	stream, err := c.openStream(ctx, "Start", payload)
 	if err != nil {
@@ -159,11 +161,11 @@ func (c *Client) StartPTY(ctx context.Context, cols, rows int, cwd string, envs 
 	ev, err := stream.Next()
 	if err != nil {
 		_ = stream.Close()
-		return nil, 0, fmt.Errorf("envd: read start event: %w", err)
+		return nil, 0, fmt.Errorf(i18n.T(i18n.Msg.EnvD.ReadStartEvent), err)
 	}
 	if ev.Start == nil {
 		_ = stream.Close()
-		return nil, 0, fmt.Errorf("envd: expected start event, got data/end")
+		return nil, 0, fmt.Errorf("%s", i18n.T(i18n.Msg.EnvD.ExpectedStartEvent))
 	}
 	return stream, ev.Start.PID, nil
 }
@@ -195,7 +197,7 @@ func (s *EventStream) Next() (*Event, error) {
 	var header [5]byte
 	if _, err := io.ReadFull(s.body, header[:]); err != nil {
 		if err == io.ErrUnexpectedEOF {
-			return nil, fmt.Errorf("envd: stream ended mid-frame: %w", err)
+			return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.StreamEndedMidFrame), err)
 		}
 		return nil, io.EOF
 	}
@@ -204,25 +206,25 @@ func (s *EventStream) Next() (*Event, error) {
 	if size > maxMessageSize {
 		// A non-framed body (e.g. a gateway "Bad gateway" text) reads as a
 		// bogus frame header; include the body excerpt for diagnosability.
-		return nil, fmt.Errorf("envd: invalid stream frame (claimed %d bytes): body starts with %s",
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.InvalidStreamFrame),
 			size, peekExcerpt(s.body))
 	}
 	payload := make([]byte, size)
 	if _, err := io.ReadFull(s.body, payload); err != nil {
-		return nil, fmt.Errorf("envd: read frame payload: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.ReadFramePayload), err)
 	}
 	if flags == frameFlagTrailer {
 		return nil, decodeTrailer(payload)
 	}
 	if flags != frameFlagMessage {
-		return nil, fmt.Errorf("envd: unexpected frame flags 0x%02x", flags)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.UnexpectedFrameFlags), flags)
 	}
 	var msg wireEvent
 	if err := json.Unmarshal(payload, &msg); err != nil {
-		return nil, fmt.Errorf("envd: decode frame: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.DecodeFrame), err)
 	}
 	if msg.Error != nil {
-		return nil, fmt.Errorf("envd: rpc error %s: %s", msg.Error.Code, msg.Error.Message)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.RPCError), msg.Error.Code, msg.Error.Message)
 	}
 	ev := &Event{}
 	if msg.Event != nil {
@@ -268,11 +270,11 @@ func decodeTrailer(payload []byte) error {
 	}
 	if len(payload) > 0 {
 		if err := json.Unmarshal(payload, &trailer); err != nil {
-			return fmt.Errorf("envd: decode trailer: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.EnvD.DecodeTrailer), err)
 		}
 	}
 	if trailer.Error != nil {
-		return fmt.Errorf("envd: stream error %s: %s", trailer.Error.Code, trailer.Error.Message)
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.StreamError), trailer.Error.Code, trailer.Error.Message)
 	}
 	return io.EOF
 }
@@ -282,21 +284,21 @@ func (c *Client) openStream(ctx context.Context, method string, payload []byte) 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.baseURL+"/process.Process/"+method, bytes.NewReader(framePayload(payload)))
 	if err != nil {
-		return nil, fmt.Errorf("envd: build %s request: %w", method, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.BuildRequest), method, err)
 	}
 	c.setHeaders(req)
 	req.Header.Set("Content-Type", contentTypeStream)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("envd: open %s stream: %w", method, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.OpenStream), method, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, fmt.Errorf("envd: %s stream returned HTTP %d: %s", method, resp.StatusCode, bodyExcerpt(resp.Body))
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.StreamHTTPError), method, resp.StatusCode, bodyExcerpt(resp.Body))
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, contentTypeStream) {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("envd: %s stream unexpected content type %q", method, ct)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.StreamContentType), method, ct)
 	}
 	return &EventStream{body: resp.Body}, nil
 }
@@ -305,27 +307,27 @@ func (c *Client) openStream(ctx context.Context, method string, payload []byte) 
 func (c *Client) callUnary(ctx context.Context, method string, body any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("envd: encode %s body: %w", method, err)
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.EncodeBody), method, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.baseURL+"/process.Process/"+method, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("envd: build %s request: %w", method, err)
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.BuildRequest), method, err)
 	}
 	c.setHeaders(req)
 	req.Header.Set("Content-Type", contentTypeUnary)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("envd: %s call: %w", method, err)
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.CallFailed), method, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("envd: %s returned HTTP %d: %s", method, resp.StatusCode, bodyExcerpt(resp.Body))
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.UnaryHTTPError), method, resp.StatusCode, bodyExcerpt(resp.Body))
 	}
 	var wire wireEvent
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if json.Unmarshal(data, &wire) == nil && wire.Error != nil {
-		return fmt.Errorf("envd: %s error %s: %s", method, wire.Error.Code, wire.Error.Message)
+		return fmt.Errorf(i18n.T(i18n.Msg.EnvD.UnaryError), method, wire.Error.Code, wire.Error.Message)
 	}
 	return nil
 }

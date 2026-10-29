@@ -17,16 +17,16 @@ linters:
     staticcheck:
       checks:
         - all
+  exclusions:
+    rules:
+      # The hand-maintained API client mirrors the API contract's camelCase
+      # naming, so Go naming/format style checks are skipped for it.
+      - path: internal/api/client\.go
+        linters:
+          - errcheck
+          - staticcheck
+          - unused
 
 formatters:
   enable:
     - gofmt
-
-issues:
-  exclude-rules:
-    # Generated OpenAPI client.
-    - path: internal/api/client\.gen\.go
-      linters:
-        - errcheck
-        - staticcheck
-        - unused

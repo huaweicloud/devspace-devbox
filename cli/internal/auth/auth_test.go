@@ -85,26 +85,22 @@ func TestStartLoginWithCallback(t *testing.T) {
 	}
 
 	callback := "http://127.0.0.1:" + port + "/"
-	body := strings.NewReader(`{"apiKey":"callback-key-42"}`)
+	body := strings.NewReader(`{"apiKey":"callback-key-42","userName":"tester","userId":"u-1"}`)
 	resp, err := http.Post(callback, "application/json", body)
 	if err != nil {
 		t.Fatalf("post callback: %v", err)
 	}
 	_ = resp.Body.Close()
 
-	got := make(chan string, 1)
-	go func() {
-		key, err := session.Wait(context.Background())
-		if err != nil {
-			t.Errorf("wait: %v", err)
-			return
-		}
-		got <- key
-	}()
-
-	key := <-got
-	if key != "callback-key-42" {
-		t.Fatalf("expected callback-key-42, got %q", key)
+	cred, ui, err := session.Wait(context.Background())
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if cred.APIKey != "callback-key-42" {
+		t.Fatalf("expected callback-key-42, got %q", cred.APIKey)
+	}
+	if ui == nil || ui.UserName != "tester" || ui.UserID != "u-1" {
+		t.Fatalf("expected user info from the callback, got %+v", ui)
 	}
 }
 

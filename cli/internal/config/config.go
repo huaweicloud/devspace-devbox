@@ -26,6 +26,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // DefaultServer is the DevBox test environment server URL. It is a var (not
@@ -74,7 +76,7 @@ func New() (*viper.Viper, error) {
 	v.AddConfigPath(dir)
 
 	if err := v.BindEnv(KeyAPIKey, EnvAPIKey); err != nil {
-		return nil, fmt.Errorf("bind %s: %w", KeyAPIKey, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.BindEnvFailed), KeyAPIKey, err)
 	}
 
 	v.SetDefault(KeyAPIKey, "")
@@ -82,7 +84,7 @@ func New() (*viper.Viper, error) {
 	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &notFound) {
-			return nil, fmt.Errorf("read config file: %w", err)
+			return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ReadConfigFileFailed), err)
 		}
 	}
 	return v, nil
@@ -132,7 +134,7 @@ func ConfigDir() (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
+		return "", fmt.Errorf(i18n.T(i18n.Msg.Config.ResolveHomeFailed), err)
 	}
 	return filepath.Join(home, ".devbox"), nil
 }
@@ -184,10 +186,10 @@ func readPersisted() (map[string]any, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return values, nil
 		}
-		return nil, fmt.Errorf("read config file: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ReadConfigFileFailed), err)
 	}
 	if err := json.Unmarshal(data, &values); err != nil {
-		return nil, fmt.Errorf("parse config file: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ParseConfigFileFailed), err)
 	}
 	return values, nil
 }
@@ -199,7 +201,7 @@ func writePersisted(values map[string]any) error {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Config.CreateConfigDirFailed), err)
 	}
 
 	// Sort keys for deterministic diffs and drop empty values.
@@ -215,7 +217,7 @@ func writePersisted(values map[string]any) error {
 	for _, k := range keys {
 		val, err := json.Marshal(values[k])
 		if err != nil {
-			return fmt.Errorf("encode config: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.Config.EncodeConfigFailed), err)
 		}
 		parts = append(parts, jsonKey(k)+`:`+string(val))
 	}
@@ -226,7 +228,7 @@ func writePersisted(values map[string]any) error {
 	}
 	data := []byte("{" + strings.Join(parts, ",") + "}\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write config file: %w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Config.WriteConfigFileFailed), err)
 	}
 	return nil
 }

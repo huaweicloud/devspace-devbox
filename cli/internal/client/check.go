@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 const (
@@ -34,15 +36,17 @@ func VerifyAPIKey(ctx context.Context, server, apiKey string) error {
 
 	url := strings.TrimRight(server, "/") + DefaultCheckPath
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// 校验接口是 POST(GET 路由不存在)，body 为空 JSON。
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
-		return fmt.Errorf("build verify request: %w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.BuildVerifyRequest), err)
 	}
 	req.Header.Set(headerAPIKey, apiKey)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := checkHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("verify api key: %w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.VerifyFailed), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -53,6 +57,6 @@ func VerifyAPIKey(ctx context.Context, server, apiKey string) error {
 	case http.StatusUnauthorized:
 		return ErrUnauthorized
 	default:
-		return fmt.Errorf("verify api key: unexpected status %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.VerifyUnexpectedStatus), resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 }

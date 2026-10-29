@@ -1,5 +1,5 @@
 // Package client is a thin, hand-reviewed wrapper around the generated
-// oapi-codegen client (internal/api). It centralises authentication, error
+// client (internal/api). It centralises authentication, error
 // decoding and pagination meta-headers so that the CLI layers stay focused on
 // command semantics rather than HTTP plumbing.
 package client
@@ -15,14 +15,15 @@ import (
 	"time"
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // ErrUnauthorized is returned by [VerifyAPIKey] when the API key is rejected
 // by the server (HTTP 401).
-var ErrUnauthorized = errors.New("api key is invalid or disabled")
+var ErrUnauthorized = errors.New(i18n.T(i18n.Msg.Client.Unauthorized))
 
 const (
-	// headerAPIKey is the auth header defined in openapi.yaml's ApiKeyAuth.
+	// headerAPIKey is the auth header of the DevBox Manager API.
 	headerAPIKey = "X-API-Key"
 	// HeaderNextToken is returned by list endpoints for pagination.
 	HeaderNextToken = "X-Next-Token"
@@ -47,7 +48,7 @@ type APIError struct {
 
 // Error implements the error interface.
 func (e *APIError) Error() string {
-	return fmt.Sprintf("DevBox API %d %s: %s", e.StatusCode, http.StatusText(e.StatusCode), e.Message)
+	return fmt.Sprintf(i18n.T(i18n.Msg.Client.APIErrorFormat), e.StatusCode, http.StatusText(e.StatusCode), e.Message)
 }
 
 // New builds a Client authenticated against the given server. An empty
@@ -62,13 +63,13 @@ func New(server, apiKey string, httpClient *http.Client) (*Client, error) {
 	httpClient.Transport = &loggingTransport{base: httpClient.Transport}
 	u, err := url.Parse(server)
 	if err != nil {
-		return nil, fmt.Errorf("invalid server URL %q: %w", server, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.InvalidServerURL), server, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("invalid server URL %q: expected http(s)://host[:port]", server)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.InvalidServerURLScheme), server)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("invalid server URL %q: missing host", server)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.InvalidServerURLHost), server)
 	}
 	apiClient, err := api.NewClientWithResponses(
 		server,
@@ -81,7 +82,7 @@ func New(server, apiKey string, httpClient *http.Client) (*Client, error) {
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create API client: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.CreateClientFailed), err)
 	}
 	return &Client{api: apiClient, baseURL: server}, nil
 }
@@ -110,7 +111,7 @@ func checkStatus(resp *http.Response, body []byte) error {
 	if len(msg) > 512 {
 		msg = msg[:512] + "..."
 	}
-	apiErr.Message = "error response: " + msg
+	apiErr.Message = i18n.T(i18n.Msg.Client.ErrorResponsePrefix) + msg
 	return apiErr
 }
 

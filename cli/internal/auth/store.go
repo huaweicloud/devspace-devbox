@@ -7,6 +7,8 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // keyringUser is the account slot used inside the OS keyring.
@@ -17,14 +19,14 @@ const keyringUser = "default"
 // An optional userInfo is always stored in the config file.
 func StoreCredential(cred *Credential, userInfo *UserInfo) error {
 	if cred == nil || cred.APIKey == "" {
-		return fmt.Errorf("nothing to store: API key is empty")
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Client.NothingToStore))
 	}
 
 	blob := base64.StdEncoding.EncodeToString([]byte(cred.APIKey))
 	if err := keyring.Set(CredentialName, keyringUser, blob); err != nil {
 		// Keyring unavailable: fall back to the config file.
 		if err := config.Set(config.KeyAPIKey, cred.APIKey); err != nil {
-			return fmt.Errorf("store credential: keyring and config file both failed: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.Client.StoreCredentialFailed), err)
 		}
 	} else {
 		// Keyring succeeded: drop any stale copy from the config file.
@@ -48,12 +50,12 @@ func LoadCredential() (*Credential, error) {
 	}
 	cfg, err := config.LoadAll()
 	if err != nil {
-		return nil, fmt.Errorf("load credential: %w", err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.LoadCredentialFailed), err)
 	}
 	if key := config.Key(cfg, config.KeyAPIKey); key != "" {
 		return &Credential{APIKey: key}, nil
 	}
-	return nil, fmt.Errorf("no credential found")
+	return nil, fmt.Errorf("%s", i18n.T(i18n.Msg.Client.NoCredential))
 }
 
 // LoadUserInfo reads the optional account metadata from the config file.

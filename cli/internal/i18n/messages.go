@@ -6,6 +6,11 @@ type Messages struct {
 	Auth     AuthMessages
 	Sandbox  SandboxMessages
 	Template TemplateMessages
+	Client   ClientMessages
+	EnvD     EnvDMessages
+	Parse    ParseMessages
+	Config   ConfigMessages
+	Output   OutputMessages
 }
 
 type CommonMessages struct {
@@ -36,6 +41,10 @@ type AuthMessages struct {
 	LoginURLNotSet     Message
 	BrowserOpened      Message
 	NoBrowserHint      Message
+	BindCallbackServer Message
+	MissingAPIKey      Message
+	LoginTimeout       Message
+	CallbackBizError   Message
 }
 
 type SandboxMessages struct {
@@ -54,6 +63,7 @@ type SandboxMessages struct {
 	ListEmpty           Message
 	InvalidState        Message
 	InvalidSandboxID    Message
+	InvalidTemplateID   Message
 	InfoShort           Message
 	KillShort           Message
 	Killed              Message
@@ -95,6 +105,71 @@ type TemplateMessages struct {
 	TemplateShort Message
 	ListShort     Message
 	ListEmpty     Message
+}
+
+type ClientMessages struct {
+	Unauthorized           Message
+	InvalidServerURL       Message
+	InvalidServerURLScheme Message
+	InvalidServerURLHost   Message
+	CreateClientFailed     Message
+	APIErrorFormat         Message
+	ErrorResponsePrefix    Message
+	BuildVerifyRequest     Message
+	VerifyFailed           Message
+	VerifyUnexpectedStatus Message
+	InvalidSandboxDomain   Message
+	InvalidDomainScheme    Message
+	NothingToStore         Message
+	StoreCredentialFailed  Message
+	LoadCredentialFailed   Message
+	NoCredential           Message
+}
+
+type EnvDMessages struct {
+	EmptyDomain          Message
+	EmptyConnectToken    Message
+	InvalidDomain        Message
+	InvalidDomainScheme  Message
+	InvalidDomainHost    Message
+	EncodeStartBody      Message
+	ReadStartEvent       Message
+	ExpectedStartEvent   Message
+	StreamEndedMidFrame  Message
+	InvalidStreamFrame   Message
+	ReadFramePayload     Message
+	UnexpectedFrameFlags Message
+	DecodeFrame          Message
+	RPCError             Message
+	DecodeTrailer        Message
+	StreamError          Message
+	BuildRequest         Message
+	OpenStream           Message
+	StreamHTTPError      Message
+	StreamContentType    Message
+	EncodeBody           Message
+	CallFailed           Message
+	UnaryHTTPError       Message
+	UnaryError           Message
+}
+
+type ParseMessages struct {
+	ExpectedKeyValue Message
+}
+
+type ConfigMessages struct {
+	BindEnvFailed         Message
+	ReadConfigFileFailed  Message
+	ResolveHomeFailed     Message
+	ParseConfigFileFailed Message
+	CreateConfigDirFailed Message
+	EncodeConfigFailed    Message
+	WriteConfigFileFailed Message
+}
+
+type OutputMessages struct {
+	UnknownFormat Message
+	EncodeFailed  Message
 }
 
 var Msg Messages

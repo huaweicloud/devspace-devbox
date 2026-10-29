@@ -19,6 +19,7 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/envd"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/parse"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/term"
 
 	"github.com/spf13/cobra"
@@ -33,7 +34,7 @@ func validateTimeoutSeconds(v int32) error {
 	return nil
 }
 
-// validateSandboxID 校验 sandboxID 入参：小写英文、数字、中划线，长度 36。
+// validateSandboxID 校验 sandboxID 入参：小写字母、数字、中划线，长度 36。
 func validateSandboxID(s string) error {
 	if len(s) != 36 {
 		return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidSandboxID), s)
@@ -41,6 +42,20 @@ func validateSandboxID(s string) error {
 	for _, r := range s {
 		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
 			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidSandboxID), s)
+		}
+	}
+	return nil
+}
+
+// validateTemplateID 校验 templateID 入参：小写字母、数字、中划线，
+// 长度不超过 64，且不能为空。
+func validateTemplateID(s string) error {
+	if s == "" || len(s) > 64 {
+		return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidTemplateID), s)
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidTemplateID), s)
 		}
 	}
 	return nil
@@ -71,9 +86,12 @@ var (
 var sandboxCreateCmd = &cobra.Command{
 	Use:     "create|cr <templateID>",
 	Aliases: []string{"create", "cr"},
-	Short:   "Create a sandbox and connect to its terminal",
+	Short:   i18n.T(i18n.Msg.Sandbox.CreateShort),
 	Args:    cobra.ExactArgs(1),
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
+		if err := validateTemplateID(args[0]); err != nil {
+			return err
+		}
 		c, err := newClient(cmd)
 		if err != nil {
 			return err
@@ -83,19 +101,19 @@ var sandboxCreateCmd = &cobra.Command{
 			if err := validateTimeoutSeconds(sandboxCreateTimeout); err != nil {
 				return err
 			}
-			req.Timeout = pInt32(sandboxCreateTimeout)
+			req.Timeout = api.PInt32(sandboxCreateTimeout)
 		}
 		if cmd.Flags().Changed("build-id") {
-			req.BuildID = pString(sandboxCreateBuildID)
+			req.BuildID = api.PString(sandboxCreateBuildID)
 		}
-		if req.Metadata, err = parseMetadata(sandboxCreateMetadata); err != nil {
-			return fmt.Errorf("invalid --metadata: %w", err)
+		if req.Metadata, err = parse.ParseMetadata(sandboxCreateMetadata); err != nil {
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidMetadata), err)
 		}
-		envMap, err := parseKV(sandboxCreateEnv)
+		envMap, err := parse.ParseKV(sandboxCreateEnv)
 		if err != nil {
-			return fmt.Errorf("invalid --env: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidEnv), err)
 		}
-		req.EnvVars = pStringMap(envMap)
+		req.EnvVars = api.PStringMap(envMap)
 
 		if cmd.Flags().Changed("lifecycle.ontimeout") {
 			ot := api.SandboxLifecycleOnTimeout(sandboxCreateOnTimeout)
@@ -165,7 +183,7 @@ var sandboxListCmd = &cobra.Command{
 			return err
 		}
 		params := &api.ListSandboxesParams{
-			Metadata: optString(sandboxListMetadata),
+			Metadata: api.OptString(sandboxListMetadata),
 		}
 		if cmd.Flags().Changed("state") {
 			states := make([]api.SandboxState, 0, len(sandboxListStates))
@@ -180,7 +198,7 @@ var sandboxListCmd = &cobra.Command{
 		}
 		// 对齐 e2b：默认 1000，0 表示不限制（不发送 limit 参数）。
 		if sandboxListLimit != 0 {
-			params.Limit = pInt(sandboxListLimit)
+			params.Limit = api.PInt(sandboxListLimit)
 		}
 
 		res, err := c.ListSandboxes(cmd.Context(), params)
@@ -196,13 +214,13 @@ var sandboxListCmd = &cobra.Command{
 			rows = append(rows, []string{
 				sb.SandboxID,
 				sb.TemplateID,
-				formatTime(sb.StartedAt),
-				formatTimePtr(sb.EndAt),
+				output.FormatTime(sb.StartedAt),
+				output.FormatTimePtr(sb.EndAt),
 				string(sb.State),
 				strconv.Itoa(int(sb.CpuCount)),
 				strconv.Itoa(int(sb.MemoryMB)),
 				strconv.Itoa(int(sb.DiskSizeMB)),
-				formatMetadata(sb.Metadata),
+				output.FormatMetadata(sb.Metadata),
 			})
 		}
 		if err := output.Print(cmd.OutOrStdout(), out(cmd), output.Spec{
@@ -240,13 +258,13 @@ var sandboxInfoCmd = &cobra.Command{
 			{Key: "Sandbox ID", Value: sb.SandboxID},
 			{Key: "Template ID", Value: sb.TemplateID},
 			{Key: "State", Value: string(sb.State)},
-			{Key: "Started at", Value: formatTime(sb.StartedAt)},
-			{Key: "End at", Value: formatTimePtr(sb.EndAt)},
+			{Key: "Started at", Value: output.FormatTime(sb.StartedAt)},
+			{Key: "End at", Value: output.FormatTimePtr(sb.EndAt)},
 			{Key: "vCPUs", Value: strconv.Itoa(int(sb.CpuCount))},
 			{Key: "RAM(MB)", Value: strconv.Itoa(int(sb.MemoryMB))},
 			{Key: "Disk(MB)", Value: strconv.Itoa(int(sb.DiskSizeMB))},
-			{Key: "Lifecycle", Value: formatJSON(sb.Lifecycle)},
-			{Key: "Metadata", Value: formatMetadata(sb.Metadata)},
+			{Key: "Lifecycle", Value: output.JSONString(sb.Lifecycle)},
+			{Key: "Metadata", Value: output.FormatMetadata(sb.Metadata)},
 			{Key: "Tunnel ID", Value: output.Dash(strFromPtr(sb.TunnelId))},
 			{Key: "Domain", Value: output.Dash(strFromPtr(sb.Domain))},
 		}
@@ -321,7 +339,7 @@ var sandboxResumeCmd = &cobra.Command{
 			if err := validateTimeoutSeconds(sandboxResumeTimeout); err != nil {
 				return err
 			}
-			opt.Timeout = pInt32(sandboxResumeTimeout)
+			opt.Timeout = api.PInt32(sandboxResumeTimeout)
 		}
 		_, err = c.ResumeSandbox(cmd.Context(), args[0], api.ResumeSandboxJSONRequestBody(opt))
 		if err != nil {
@@ -362,7 +380,7 @@ var sandboxConnectCmd = &cobra.Command{
 			if err := validateTimeoutSeconds(sandboxConnectTimeout); err != nil {
 				return err
 			}
-			opt.Timeout = pInt32(sandboxConnectTimeout)
+			opt.Timeout = api.PInt32(sandboxConnectTimeout)
 		}
 		sb, err := c.ConnectSandbox(cmd.Context(), args[0], api.ConnectSandboxJSONRequestBody(opt))
 		if err != nil {
@@ -378,9 +396,9 @@ var sandboxConnectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		envMap, err := parseKV(sandboxConnectEnv)
+		envMap, err := parse.ParseKV(sandboxConnectEnv)
 		if err != nil {
-			return fmt.Errorf("invalid --env: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidEnv), err)
 		}
 		fmt.Printf(i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
 		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxConnectCwd, envMap).Run(cmd.Context())
@@ -419,7 +437,7 @@ var sandboxTimeoutCmd = &cobra.Command{
 			}
 		}
 		if err := c.SetSandboxTimeout(cmd.Context(), args[0], api.SetSandboxTimeoutJSONRequestBody(api.TimeoutOption{
-			Timeout: pInt32(sandboxTimeoutValue),
+			Timeout: api.PInt32(sandboxTimeoutValue),
 		})); err != nil {
 			return err
 		}
@@ -490,9 +508,9 @@ var sandboxExecCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		envMap, err := parseKV(sandboxExecEnv)
+		envMap, err := parse.ParseKV(sandboxExecEnv)
 		if err != nil {
-			return fmt.Errorf("invalid --env: %w", err)
+			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidEnv), err)
 		}
 		// 获取连接凭证（paused 沙箱会被自动恢复），不设置沙箱 TTL。
 		sb, err := c.ConnectSandbox(cmd.Context(), args[0], api.ConnectSandboxJSONRequestBody(api.TimeoutOption{}))
@@ -513,7 +531,7 @@ var sandboxExecCmd = &cobra.Command{
 			Cmd:  "/bin/bash",
 			Args: []string{"-l", "-c", cmdStr},
 			Envs: envMap,
-			Cwd:  optString(sandboxExecCwd),
+			Cwd:  api.OptString(sandboxExecCwd),
 		}
 		piped := pipedStdin()
 		stream, err := pc.Start(cmd.Context(), cfg, piped)
@@ -619,7 +637,7 @@ func streamLocalStdin(ctx context.Context, pc *client.ProcessClient, pid uint32)
 		if n > 0 {
 			if err := pc.SendInput(ctx, pid, buf[:n]); err != nil {
 				if client.IsNotFound(err) {
-					fmt.Fprintln(os.Stderr, "devbox: Remote command exited before stdin could be delivered.")
+					fmt.Fprintln(os.Stderr, i18n.T(i18n.Msg.Sandbox.StdinAfterExit))
 				}
 				return
 			}

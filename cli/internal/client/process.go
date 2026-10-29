@@ -12,6 +12,7 @@ import (
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api/processgen/process"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api/processgen/process/processconnect"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // defaultEnvdPort is the envd port baked into sandbox domains; it is also the
@@ -74,10 +75,10 @@ func NewProcessClient(domain, sandboxID, connectToken string, httpClient *http.C
 	}
 	u, err := url.Parse(domain)
 	if err != nil {
-		return nil, fmt.Errorf("invalid sandbox domain %q: %w", domain, err)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.InvalidSandboxDomain), domain, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("invalid sandbox domain %q: expected http(s)://host[:port]", domain)
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Client.InvalidDomainScheme), domain)
 	}
 	rpc := processconnect.NewProcessClient(
 		httpClient,

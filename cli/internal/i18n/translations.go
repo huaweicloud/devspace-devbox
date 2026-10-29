@@ -101,6 +101,22 @@ func init() {
 				ZH: "无可用浏览器，请手动登录。API Key 管理页面: %s\n例如: ./devbox auth login --api-key=YOUR_API_KEY",
 				EN: "No browser available, please login manually. API key management page: %s\nFor example: ./devbox auth login --api-key=YOUR_API_KEY",
 			},
+			BindCallbackServer: Message{
+				ZH: "绑定登录回调服务器失败：%w",
+				EN: "bind login callback server: %w",
+			},
+			MissingAPIKey: Message{
+				ZH: "登录响应未包含 API Key",
+				EN: "login response did not contain an API key",
+			},
+			LoginTimeout: Message{
+				ZH: "登录超时，未收到 API Key",
+				EN: "login timed out; no API key was received",
+			},
+			CallbackBizError: Message{
+				ZH: "登录失败: %s: %s\n请前往管理页面删除 API Key 后重试。API Key 管理页面： %s",
+				EN: "Login failed: %s: %s\nPlease go to the management page to delete API keys and try again. API key management page: %s",
+			},
 		},
 		Sandbox: SandboxMessages{
 			SandboxShort: Message{
@@ -112,11 +128,11 @@ func init() {
 				EN: "Create a sandbox and connect to its terminal",
 			},
 			InvalidMetadata: Message{
-				ZH: "invalid --metadata: %w",
+				ZH: "--metadata 无效：%w",
 				EN: "invalid --metadata: %w",
 			},
 			InvalidEnv: Message{
-				ZH: "invalid --env: %w",
+				ZH: "--env 无效：%w",
 				EN: "invalid --env: %w",
 			},
 			AutoResumeRequires: Message{
@@ -160,8 +176,12 @@ func init() {
 				EN: "invalid state %q (supported: running, paused)",
 			},
 			InvalidSandboxID: Message{
-				ZH: "沙箱 ID %q 无效（须为 36 位小写英文、数字和中划线）",
+				ZH: "沙箱 ID %q 无效（须为 36 位小写字母、数字和中划线）",
 				EN: "invalid sandbox ID %q (must be 36 characters of lowercase letters, digits and hyphens)",
+			},
+			InvalidTemplateID: Message{
+				ZH: "模板 ID %q 无效（须为不超过 64 位的小写字母、数字和中划线，且不能为空）",
+				EN: "invalid template ID %q (must be at most 64 characters of lowercase letters, digits and hyphens, and must not be empty)",
 			},
 			InfoShort: Message{
 				ZH: "查看沙箱信息",
@@ -316,6 +336,216 @@ func init() {
 			ListEmpty: Message{
 				ZH: "未找到模板",
 				EN: "No templates found",
+			},
+		},
+		Client: ClientMessages{
+			Unauthorized: Message{
+				ZH: "API Key 无效或已被禁用",
+				EN: "api key is invalid or disabled",
+			},
+			InvalidServerURL: Message{
+				ZH: "无效的服务器地址 %q：%w",
+				EN: "invalid server URL %q: %w",
+			},
+			InvalidServerURLScheme: Message{
+				ZH: "无效的服务器地址 %q：需要 http(s)://host 形式",
+				EN: "invalid server URL %q: expected http(s)://host[:port]",
+			},
+			InvalidServerURLHost: Message{
+				ZH: "无效的服务器地址 %q：缺少主机名",
+				EN: "invalid server URL %q: missing host",
+			},
+			CreateClientFailed: Message{
+				ZH: "创建 API 客户端失败：%w",
+				EN: "create API client: %w",
+			},
+			APIErrorFormat: Message{
+				ZH: "DevBox API %d %s：%s",
+				EN: "DevBox API %d %s: %s",
+			},
+			ErrorResponsePrefix: Message{
+				ZH: "错误响应：",
+				EN: "error response: ",
+			},
+			BuildVerifyRequest: Message{
+				ZH: "构造校验请求失败：%w",
+				EN: "build verify request: %w",
+			},
+			VerifyFailed: Message{
+				ZH: "API Key 校验失败：%w",
+				EN: "verify api key: %w",
+			},
+			VerifyUnexpectedStatus: Message{
+				ZH: "API Key 校验失败：意外的状态码 %d %s",
+				EN: "verify api key: unexpected status %d %s",
+			},
+			InvalidSandboxDomain: Message{
+				ZH: "无效的沙箱地址 %q：%w",
+				EN: "invalid sandbox domain %q: %w",
+			},
+			InvalidDomainScheme: Message{
+				ZH: "无效的沙箱地址 %q：需要 http(s)://host 形式",
+				EN: "invalid sandbox domain %q: expected http(s)://host[:port]",
+			},
+			NothingToStore: Message{
+				ZH: "没有可存储的内容：API Key 为空",
+				EN: "nothing to store: API key is empty",
+			},
+			StoreCredentialFailed: Message{
+				ZH: "存储凭据失败：keyring 和配置文件均失败：%w",
+				EN: "store credential: keyring and config file both failed: %w",
+			},
+			LoadCredentialFailed: Message{
+				ZH: "读取凭据失败：%w",
+				EN: "load credential: %w",
+			},
+			NoCredential: Message{
+				ZH: "未找到凭据",
+				EN: "no credential found",
+			},
+		},
+		EnvD: EnvDMessages{
+			EmptyDomain: Message{
+				ZH: "envd：domain 为空",
+				EN: "envd: empty domain",
+			},
+			EmptyConnectToken: Message{
+				ZH: "envd：connect token 为空",
+				EN: "envd: empty connect token",
+			},
+			InvalidDomain: Message{
+				ZH: "envd：domain %q 无效：%w",
+				EN: "envd: invalid domain %q: %w",
+			},
+			InvalidDomainScheme: Message{
+				ZH: "envd：domain %q 无效：需要 http(s)://host 形式",
+				EN: "envd: invalid domain %q: expected http(s)://host",
+			},
+			InvalidDomainHost: Message{
+				ZH: "envd：domain %q 无效：缺少主机名",
+				EN: "envd: invalid domain %q: missing host",
+			},
+			EncodeStartBody: Message{
+				ZH: "envd：编码 Start 请求体失败：%w",
+				EN: "envd: encode start body: %w",
+			},
+			ReadStartEvent: Message{
+				ZH: "envd：读取 start 事件失败：%w",
+				EN: "envd: read start event: %w",
+			},
+			ExpectedStartEvent: Message{
+				ZH: "envd：预期 start 事件，实际是 data/end",
+				EN: "envd: expected start event, got data/end",
+			},
+			StreamEndedMidFrame: Message{
+				ZH: "envd：数据流在帧中间结束：%w",
+				EN: "envd: stream ended mid-frame: %w",
+			},
+			InvalidStreamFrame: Message{
+				ZH: "envd：无效的数据流帧（声明 %d 字节）：内容开头 %s",
+				EN: "envd: invalid stream frame (claimed %d bytes): body starts with %s",
+			},
+			ReadFramePayload: Message{
+				ZH: "envd：读取帧内容失败：%w",
+				EN: "envd: read frame payload: %w",
+			},
+			UnexpectedFrameFlags: Message{
+				ZH: "envd：意外的帧标志 0x%02x",
+				EN: "envd: unexpected frame flags 0x%02x",
+			},
+			DecodeFrame: Message{
+				ZH: "envd：解码帧失败：%w",
+				EN: "envd: decode frame: %w",
+			},
+			RPCError: Message{
+				ZH: "envd：RPC 错误 %s：%s",
+				EN: "envd: rpc error %s: %s",
+			},
+			DecodeTrailer: Message{
+				ZH: "envd：解码结束帧失败：%w",
+				EN: "envd: decode trailer: %w",
+			},
+			StreamError: Message{
+				ZH: "envd：数据流错误 %s：%s",
+				EN: "envd: stream error %s: %s",
+			},
+			BuildRequest: Message{
+				ZH: "envd：构造 %s 请求失败：%w",
+				EN: "envd: build %s request: %w",
+			},
+			OpenStream: Message{
+				ZH: "envd：打开 %s 数据流失败：%w",
+				EN: "envd: open %s stream: %w",
+			},
+			StreamHTTPError: Message{
+				ZH: "envd：%s 数据流返回 HTTP %d：%s",
+				EN: "envd: %s stream returned HTTP %d: %s",
+			},
+			StreamContentType: Message{
+				ZH: "envd：%s 数据流的内容类型意外 %q",
+				EN: "envd: %s stream unexpected content type %q",
+			},
+			EncodeBody: Message{
+				ZH: "envd：编码 %s 请求体失败：%w",
+				EN: "envd: encode %s body: %w",
+			},
+			CallFailed: Message{
+				ZH: "envd：%s 调用失败：%w",
+				EN: "envd: %s call: %w",
+			},
+			UnaryHTTPError: Message{
+				ZH: "envd：%s 返回 HTTP %d：%s",
+				EN: "envd: %s returned HTTP %d: %s",
+			},
+			UnaryError: Message{
+				ZH: "envd：%s 错误 %s：%s",
+				EN: "envd: %s error %s: %s",
+			},
+		},
+		Parse: ParseMessages{
+			ExpectedKeyValue: Message{
+				ZH: "预期 key=value 格式，实际 %q",
+				EN: "expected key=value, got %q",
+			},
+		},
+		Config: ConfigMessages{
+			BindEnvFailed: Message{
+				ZH: "绑定 %s 环境变量失败：%w",
+				EN: "bind %s: %w",
+			},
+			ReadConfigFileFailed: Message{
+				ZH: "读取配置文件失败：%w",
+				EN: "read config file: %w",
+			},
+			ResolveHomeFailed: Message{
+				ZH: "解析用户主目录失败：%w",
+				EN: "resolve home directory: %w",
+			},
+			ParseConfigFileFailed: Message{
+				ZH: "解析配置文件失败：%w",
+				EN: "parse config file: %w",
+			},
+			CreateConfigDirFailed: Message{
+				ZH: "创建配置目录失败：%w",
+				EN: "create config dir: %w",
+			},
+			EncodeConfigFailed: Message{
+				ZH: "编码配置失败：%w",
+				EN: "encode config: %w",
+			},
+			WriteConfigFileFailed: Message{
+				ZH: "写入配置文件失败：%w",
+				EN: "write config file: %w",
+			},
+		},
+		Output: OutputMessages{
+			UnknownFormat: Message{
+				ZH: "未知的输出格式 %q（支持: pretty, json）",
+				EN: "unknown output format %q (supported: pretty, json)",
+			},
+			EncodeFailed: Message{
+				ZH: "编码 JSON 失败：%w",
+				EN: "encode JSON: %w",
 			},
 		},
 	}

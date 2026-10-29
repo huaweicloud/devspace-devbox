@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
 // Format selects the rendering style.
@@ -34,7 +36,7 @@ func ParseFormat(s string) (Format, error) {
 	case "json":
 		return FormatJSON, nil
 	default:
-		return "", fmt.Errorf("unknown output format %q (supported: pretty, json)", s)
+		return "", fmt.Errorf(i18n.T(i18n.Msg.Output.UnknownFormat), s)
 	}
 }
 
@@ -71,7 +73,7 @@ func Print(w io.Writer, format Format, spec Spec) error {
 func PrintJSON(w io.Writer, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode JSON: %w", err)
+		return fmt.Errorf(i18n.T(i18n.Msg.Output.EncodeFailed), err)
 	}
 	if _, err := fmt.Fprintln(w, string(data)); err != nil {
 		return err
