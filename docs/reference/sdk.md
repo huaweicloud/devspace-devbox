@@ -24,7 +24,7 @@
 | `client.sandboxes.create()` | `template`、`timeout`、`build_id` / `buildId`、`envs`、`metadata`、`lifecycle` | 创建沙箱，返回 `Sandbox` |
 | `client.sandboxes.connect()` | `sandbox_id` / `sandboxId`、`timeout=300` | 获取访问凭证，必要时恢复沙箱，返回 `Sandbox` |
 | `client.sandboxes.get()` | `sandbox_id` / `sandboxId` | 返回最新 `SandboxInfo` |
-| `client.sandboxes.list()` | `states`、`metadata`、`limit`、`next_token` / `nextToken` | 返回 `Page<SandboxInfo>`，包含列表和分页信息 |
+| `client.sandboxes.list()` | `template`、`states`、`metadata`、`limit`、`next_token` / `nextToken` | 返回 `Page<SandboxInfo>`，包含列表和分页信息 |
 | `sandbox.get_info()` / `getInfo()` | 无 | 查询最新 `SandboxInfo`；`sandbox.info` 为本地已获取的信息 |
 | `sandbox.is_running()` / `isRunning()` | 无 | 返回是否处于运行状态；不存在时返回 false |
 | `sandbox.set_timeout()` / `setTimeout()` | `timeout` | 从现在起重设剩余存活秒数，可延长或缩短 |
@@ -33,6 +33,18 @@
 | `sandbox.resume()` | `timeout=300` | 恢复同一沙箱，返回 `Sandbox` |
 | `sandbox.kill()` | 无 | 销毁沙箱并关闭本地连接；返回本次是否执行了销毁请求 |
 | `sandbox.close()` | 无 | 释放本地连接，不销毁远端沙箱 |
+
+列表的 `template` 接受模板 ID 或别名；`limit` 支持 1–1000，`0` 或省略表示不限制。
+
+::: code-group
+```python [Python]
+page = client.sandboxes.list(template="default", limit=1000)
+```
+
+```js [JavaScript / TypeScript]
+const page = await client.sandboxes.list({ template: "default", limit: 1000 });
+```
+:::
 
 `Sandbox.create()` 和 `Sandbox.connect()` 是无需先创建 `DevBox` 的快捷入口，支持相同的业务参数及连接配置。这里的 `connect()` 用于获取沙箱访问入口，与[命令的 connect](#命令与进程) 按 PID 订阅输出不同。
 
@@ -67,7 +79,7 @@
 
 | Python / JS 方法 | 主要参数 | 返回与用途 |
 | --- | --- | --- |
-| `run()` | `command`、`background`、`cwd`、`envs`、`user`、`stdin`、`timeout` / `timeoutMs`、输出回调、`check` | 前台返回 `CommandResult`；后台返回 `CommandHandle` |
+| `run()` | `command`、`background`、`cwd`、`envs`、`stdin`、`timeout` / `timeoutMs`、输出回调、`check` | 前台返回 `CommandResult`；后台返回 `CommandHandle` |
 | `connect()` | `pid`、`timeout` / `timeoutMs` | 返回已有进程的 `CommandHandle`，订阅后续输出 |
 | `list()` | 无 | `ProcessInfo` 列表 |
 | `send_stdin()` / `sendStdin()` | `pid`、`data` | 向进程写入标准输入 |
@@ -86,6 +98,8 @@
 | `disconnect()` | 无 | 断开本地输出流，不终止远端进程 |
 
 Python 回调为 `on_stdout`、`on_stderr`，JS 为 `onStdout`、`onStderr`。后台模式的回调传给 `handle.wait()`。重连不回放断开期间的输出。见[命令与进程示例](../guide/commands.md)。
+
+命令和终端均支持 `cwd`，目录须存在且执行用户有访问权限；当前不支持 `user` 切换，显式传入会报错。
 
 ## 文件
 
@@ -115,7 +129,7 @@ Python 回调为 `on_stdout`、`on_stderr`，JS 为 `onStdout`、`onStderr`。�
 
 | 方法 | 主要参数 | 返回与用途 |
 | --- | --- | --- |
-| `start()` | `command="/bin/bash"`、`size`、`envs`、`cwd`、`user` | 创建终端并返回 `CommandHandle` |
+| `start()` | `command="/bin/bash"`、`size`、`envs`、`cwd` | 创建终端并返回 `CommandHandle` |
 | `connect()` | `pid`、`timeout` / `timeoutMs` | 重新订阅已有终端，返回 `CommandHandle` |
 | `resize()` | `pid`、`size` | 修改终端的 `rows`、`cols` |
 

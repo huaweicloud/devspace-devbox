@@ -47,14 +47,16 @@ curl --fail-with-body "$DEVBOX_API_URL/sandboxes" \
 
 | Query 参数 | 类型 | 说明 |
 | --- | --- | --- |
+| `template` | string | 按模板 ID 或别名精确筛选，如 `tpl-devbox-base-test` 或 `default`；省略时不限制模板 |
 | `state` | string | `running`、`paused`，多个状态用逗号分隔；省略时包含两者 |
 | `metadata` | string | URL 编码的键值筛选条件，如 `project=example&stage=test`；所有条件须同时满足 |
-| `limit` | integer | 每页 1–100 条；省略时当前实现返回全部匹配项，建议显式指定 |
+| `limit` | integer | 每页 1–1000 条；`0` 或省略时返回全部匹配项，建议显式指定 |
 | `nextToken` | string | 上一页 `X-Next-Token` 响应头，按原值传回 |
 
 ```bash
 curl --fail-with-body -i --get "$DEVBOX_API_URL/sandboxes" \
   -H "X-API-Key: $DEVBOX_API_KEY" \
+  --data-urlencode 'template=default' \
   --data-urlencode 'state=running,paused' \
   --data-urlencode 'metadata=project=example' \
   --data-urlencode 'limit=20'
@@ -68,6 +70,8 @@ curl --fail-with-body -i --get "$DEVBOX_API_URL/sandboxes" \
 | `X-Total-Running` | 当前 Namespace 的运行数，独立于本次筛选条件和分页，不是返回条数 |
 
 获取下一页时保持筛选条件不变，将游标放入 `nextToken`。列表不是固定快照；沙箱同时创建或删除时，分页结果可能变化。
+
+模板、状态和 metadata 条件同时生效，筛选完成后再分页。没有匹配项时返回 `[]`。
 
 ## 查询沙箱 {#get}
 
