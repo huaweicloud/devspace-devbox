@@ -8,8 +8,8 @@ func init() {
 				EN: "CLI for the DevBox sandbox manager",
 			},
 			RootLong: Message{
-				ZH: "devbox 是 DevBox 沙箱管理器的命令行客户端。\n\n覆盖完整的沙箱生命周期（创建、列表、信息、终止、暂停、恢复、连接终端、执行命令）与模板。\n\n配置的解析顺序：\n  1. flags                --api-key (auth login)\n  2. environment          HW_DEVBOX_API_KEY\n  3. config file          ~/.devbox/config.json\n  4. build-time default   API server URL injected via Makefile, currently ",
-				EN: "devbox is a command-line client for the DevBox Sandbox Manager API.\n\nIt covers the full sandbox lifecycle (create, list, info, kill, pause,\nresume, connect, exec) and templates.\n\nConfiguration is resolved in this order:\n  1. flags                --api-key (auth login)\n  2. environment          HW_DEVBOX_API_KEY\n  3. config file          ~/.devbox/config.json\n  4. build-time default   API server URL injected via Makefile, currently ",
+				ZH: "devbox 是 DevBox 沙箱管理器的命令行客户端。\n\n覆盖完整的沙箱生命周期（创建、列表、信息、终止、暂停、恢复、连接终端、执行命令）与模板。\n\n配置的解析顺序：\n  1. flags                --api-key (auth login)\n  2. environment          HW_DEVBOX_API_KEY\n  3. config file          ~/.huawei/devbox/config.json\n  4. build-time default   API server URL injected via Makefile, currently ",
+				EN: "devbox is a command-line client for the DevBox Sandbox Manager API.\n\nIt covers the full sandbox lifecycle (create, list, info, kill, pause,\nresume, connect, exec) and templates.\n\nConfiguration is resolved in this order:\n  1. flags                --api-key (auth login)\n  2. environment          HW_DEVBOX_API_KEY\n  3. config file          ~/.huawei/devbox/config.json\n  4. build-time default   API server URL injected via Makefile, currently ",
 			},
 			FlagVerbose: Message{
 				ZH: "打印调试日志（含接口请求/返回）",

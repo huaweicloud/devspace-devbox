@@ -69,16 +69,16 @@ func Path() (string, error) {
 }
 
 // ConfigDir returns the devbox config directory, honouring XDG on Linux and
-// falling back to $HOME/.devbox.
+// falling back to $HOME/.huawei/devbox (aligned with devbridge's layout).
 func ConfigDir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "devbox"), nil
+		return filepath.Join(xdg, "huawei", "devbox"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf(i18n.T(i18n.Msg.Config.ResolveHomeFailed), err)
 	}
-	return filepath.Join(home, ".devbox"), nil
+	return filepath.Join(home, ".huawei", "devbox"), nil
 }
 
 // Set persists a single key in the config file.
@@ -117,6 +117,8 @@ func Key(m map[string]any, key string) string {
 }
 
 // readPersisted loads only the values currently stored in the config file.
+// A missing or empty file is treated as no persisted values (an empty file is
+// what writePersisted leaves after everything is removed).
 func readPersisted() (map[string]any, error) {
 	values := make(map[string]any)
 	path, err := Path()
@@ -129,6 +131,9 @@ func readPersisted() (map[string]any, error) {
 			return values, nil
 		}
 		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ReadConfigFileFailed), err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return values, nil
 	}
 	if err := json.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ParseConfigFileFailed), err)
@@ -155,6 +160,19 @@ func writePersisted(values map[string]any) error {
 	}
 	sort.Strings(keys)
 
+	path, err := Path()
+	if err != nil {
+		return err
+	}
+
+	// Nothing left to persist: write an empty file instead of "{}".
+	if len(keys) == 0 {
+		if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
+			return fmt.Errorf(i18n.T(i18n.Msg.Config.WriteConfigFileFailed), err)
+		}
+		return nil
+	}
+
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		val, err := json.Marshal(values[k])
@@ -164,10 +182,6 @@ func writePersisted(values map[string]any) error {
 		parts = append(parts, jsonKey(k)+`:`+string(val))
 	}
 
-	path, err := Path()
-	if err != nil {
-		return err
-	}
 	data := []byte("{" + strings.Join(parts, ",") + "}\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf(i18n.T(i18n.Msg.Config.WriteConfigFileFailed), err)
