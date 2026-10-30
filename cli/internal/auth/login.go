@@ -29,6 +29,8 @@ type LoginSession struct {
 	URL string
 	// BrowserOpened is false when no default browser could be launched.
 	BrowserOpened bool
+	// origin is the login page origin allowed to POST to the callback.
+	origin string
 
 	srv      *http.Server
 	listener net.Listener
@@ -84,6 +86,7 @@ func StartLogin(loginBase string) (*LoginSession, error) {
 	s := &LoginSession{
 		URL:           loginPageURL(loginBase, port),
 		BrowserOpened: true,
+		origin:        strings.TrimRight(loginBase, "/"),
 		listener:      listener,
 		resultCh:      make(chan callbackBody, 1),
 		errCh:         make(chan error, 1),
@@ -133,45 +136,51 @@ func (s *LoginSession) Close() {
 }
 
 func (s *LoginSession) handleCallback(w http.ResponseWriter, r *http.Request) {
-	// Allow cross-origin posts from the login page and CORS preflights.
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
+	// Aligned with devbridge: only cross-origin POSTs from the login page are allowed; other origins/methods are rejected.
+	w.Header().Set("Access-Control-Allow-Origin", s.origin)
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-
-	key := r.URL.Query().Get("apiKey")
-	var cb callbackBody
-	if key == "" {
-		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
-		if err == nil && json.Unmarshal(data, &cb) == nil {
-			// 回调数据日志：打印完整 body（apiKey 字段脱敏），绝不输出明文。
-			slog.Debug("login callback: body received",
-				"remote", r.RemoteAddr,
-				"body", maskBodyKeys(data),
-			)
-			// 登录页回报业务错误码（如 API Key 数量超上限）时，提示前往
-			// API Key 管理页面处理（对齐 devbridge）。
-			if cb.ErrorCode != "" && cb.ErrorCode != loginSuccessCode {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte("login failed"))
-				s.errCh <- fmt.Errorf(i18n.T(i18n.Msg.Auth.CallbackBizError),
-					cb.ErrorCode, cb.ErrorMsg, apikeyPageURL())
-				return
-			}
-			key = cb.APIKey
-			if key == "" && cb.Result != nil {
-				key = cb.Result.APIKey
-				// 用户信息可能嵌套在 result 里，提升到顶层以便回传。
-				cb.UserName = cb.Result.UserName
-				cb.UserID = cb.Result.UserID
-			}
-		}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
+	var cb callbackBody
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	if err != nil || json.Unmarshal(data, &cb) != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("bad request"))
+		s.errCh <- errMissingAPIKey
+		return
+	}
+
+	// Callback data log: prints the full body (apiKey masked); the clear text is never output.
+	slog.Debug("login callback: body received",
+		"remote", r.RemoteAddr,
+		"body", maskBodyKeys(data),
+	)
+	// When the login page reports a business error code (e.g. the API key limit is exceeded),
+	// direct the user to the API key management page (aligned with devbridge).
+	if cb.ErrorCode != "" && cb.ErrorCode != loginSuccessCode {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("login failed"))
+		s.errCh <- fmt.Errorf(i18n.T(i18n.Msg.Auth.CallbackBizError),
+			cb.ErrorCode, cb.ErrorMsg, apikeyPageURL())
+		return
+	}
+
+	key := cb.APIKey
+	if key == "" && cb.Result != nil {
+		key = cb.Result.APIKey
+		// The user info may be nested under result; lift it to the top level for the reply.
+		cb.UserName = cb.Result.UserName
+		cb.UserID = cb.Result.UserID
+	}
 	if key == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("missing api key"))
@@ -243,8 +252,8 @@ func apikeyPageURL() string {
 	return strings.TrimRight(config.LoginURL, "/") + config.ApikeyPagePath
 }
 
-// BrowserLogin 打开登录页并等待 API Key 回调，校验通过后存储凭据。登录页与
-// 校验地址均取构建期注入的配置（config.LoginURL / config.DefaultServer）。
+// BrowserLogin opens the login page, waits for the API key callback and stores the credentials after verification. Both the login page
+// and the check address come from the build-time config (config.LoginURL / config.DefaultServer).
 func BrowserLogin(ctx context.Context) error {
 	loginBase := config.LoginURL
 	if loginBase == "" {
@@ -259,7 +268,7 @@ func BrowserLogin(ctx context.Context) error {
 	if session.BrowserOpened {
 		fmt.Println(i18n.T(i18n.Msg.Auth.BrowserOpened))
 	} else {
-		// 对齐 devbridge：无浏览器时直接报错，引导用户到 API Key 管理页面。
+		// Aligned with devbridge: without a browser, fail immediately and direct the user to the API key management page.
 		return fmt.Errorf(i18n.T(i18n.Msg.Auth.NoBrowserHint), apikeyPageURL())
 	}
 
@@ -280,7 +289,7 @@ func BrowserLogin(ctx context.Context) error {
 	return nil
 }
 
-// LoginVerifyError 包装登录校验失败错误：401 时给出统一提示。
+// LoginVerifyError wraps verification failures: 401 gets a unified message.
 func LoginVerifyError(prefix string, err error) error {
 	if IsUnauthorized(err) {
 		return fmt.Errorf("%s", i18n.T(i18n.Msg.Auth.LoginAPIKeyInvalid))

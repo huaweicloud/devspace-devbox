@@ -1,7 +1,7 @@
 // Package cmd defines the cobra command tree for the devbox CLI.
 //
-// 每个命令都是包级 var（如 loginCmd、configGetCmd），通过各文件 init() 中的 AddCommand 注册到父命令。
-// 业务错误统一由 runError 包装后打印，main 只负责 ExitCode。
+// Each command is a package-level var (e.g. loginCmd), registered to its parent via AddCommand in each file's init().
+// Business errors are uniformly wrapped by runError and printed; main only handles the ExitCode.
 package cmd
 
 import (
@@ -19,10 +19,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version 可通过 -ldflags "-X .../cmd.Version=..." 注入。
+// Version is injected via -ldflags "-X .../cmd.Version=...".
 var Version = "dev"
 
-// RootCmd 是所有子命令的根。
+// RootCmd is the root of all subcommands.
 var RootCmd = &cobra.Command{
 	Use:     "devbox",
 	Short:   i18n.T(i18n.Msg.Common.RootShort),
@@ -42,17 +42,17 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	// 全局 verbose 开关（-v）：开启后打印 debug 日志（含接口请求/返回）。
-	// 注册 -v 后，cobra 的 --version 旗标不再占用 -v 简写。
+	// Global verbose switch (-v): enables debug logs (including API requests/responses).
+	// After registering -v, cobra's --version flag no longer occupies the -v shorthand.
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, i18n.T(i18n.Msg.Common.FlagVerbose))
 
-	// --version 只输出版本号本身（默认模板会带 "devbox.exe version " 前缀）。
+	// --version outputs only the version string itself (the default template adds a "devbox.exe version " prefix).
 	RootCmd.SetVersionTemplate("{{.Version}}\n")
 
 	RootCmd.AddCommand(authCmd, sandboxCmd, templateCmd)
 }
 
-// runError 包装 RunE：出错时关闭 cobra 的 usage/error 重复输出，统一打印到 stderr。
+// runError wraps RunE: on error it silences cobra's usage/error duplication and prints to stderr.
 func runError(fn func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		err := fn(cmd, args)
@@ -65,9 +65,9 @@ func runError(fn func(cmd *cobra.Command, args []string) error) func(cmd *cobra.
 	}
 }
 
-// newClient 构造 API 客户端。API Key 的解析顺序与 devbridge 一致：命令行
-// override > HW_DEVBOX_API_KEY 环境变量 > 存储的凭据（keyring 优先、配置文件兜底），
-// 见 auth.ReadValidAPIKey。--timeout 未注册时使用默认 30s。
+// newClient builds the API client. The API key resolution order mirrors devbridge: command line
+// override > HW_DEVBOX_API_KEY env var > stored credentials (keyring first, config file fallback),
+// see auth.ReadValidAPIKey. An unregistered --timeout falls back to the default 30s.
 func newClient(cmd *cobra.Command) (*client.Client, error) {
 	timeout, err := cmd.Flags().GetDuration("timeout")
 	if err != nil || timeout == 0 {
@@ -80,7 +80,7 @@ func newClient(cmd *cobra.Command) (*client.Client, error) {
 	return client.New(config.DefaultServer, apiKey, &http.Client{Timeout: timeout})
 }
 
-// out 返回当前命令 --format 对应的格式（未注册或非法时按 pretty/text 处理）。
+// out returns the format for the command's --format flag (unregistered or invalid falls back to pretty/text).
 func out(cmd *cobra.Command) output.Format {
 	f, err := cmd.Flags().GetString("format")
 	if err != nil {
@@ -93,7 +93,7 @@ func out(cmd *cobra.Command) output.Format {
 	return format
 }
 
-// strFromPtr 将可空字符串转为展示值。
+// strFromPtr converts a nullable string to a display value.
 func strFromPtr(s *string) string {
 	if s == nil {
 		return ""

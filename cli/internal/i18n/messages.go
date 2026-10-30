@@ -1,6 +1,6 @@
 package i18n
 
-// Messages 是 devbox CLI 全部用户可见文案的消息树。
+// Messages is the tree of all user-facing strings of the devbox CLI.
 type Messages struct {
 	Common   CommonMessages
 	Auth     AuthMessages
@@ -67,6 +67,11 @@ type SandboxMessages struct {
 	InfoShort           Message
 	KillShort           Message
 	Killed              Message
+	KillAllConflict     Message
+	KillRequiresArgs    Message
+	FlagKillAll         Message
+	FlagKillState       Message
+	FlagKillMetadata    Message
 	PauseShort          Message
 	Paused              Message
 	ResumeShort         Message
@@ -87,6 +92,7 @@ type SandboxMessages struct {
 	InvalidTimeout      Message
 	FlagMetadata        Message
 	FlagMetadataFilter  Message
+	FlagTemplateFilter  Message
 	FlagEnv             Message
 	FlagEnvTerm         Message
 	FlagBuildID         Message

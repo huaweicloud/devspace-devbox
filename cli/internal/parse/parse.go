@@ -1,4 +1,4 @@
-// Package parse 提供 key=value 形式命令行参数的解析工具。
+// Package parse provides parsing helpers for key=value command line arguments.
 package parse
 
 import (
@@ -8,8 +8,8 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
-// ParseKV 将重复的 key=value 参数解析为 map；按第一个 "=" 切分，
-// value 中可以再包含 "="。
+// ParseKV parses repeated key=value arguments into a map; split on the first "=",
+// the value may contain further "=" characters.
 func ParseKV(pairs []string) (map[string]string, error) {
 	if len(pairs) == 0 {
 		return nil, nil
@@ -25,7 +25,7 @@ func ParseKV(pairs []string) (map[string]string, error) {
 	return out, nil
 }
 
-// ParseMetadata 解析 --metadata 参数，空时返回 nil。
+// ParseMetadata parses the --metadata argument; empty returns nil.
 func ParseMetadata(pairs []string) (*map[string]string, error) {
 	m, err := ParseKV(pairs)
 	if err != nil {

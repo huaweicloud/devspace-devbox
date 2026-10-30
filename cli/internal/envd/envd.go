@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -127,19 +128,14 @@ type EndEvent struct {
 // StartPTY starts an interactive login shell with a PTY of the given size and
 // returns the event stream plus the PID of the remote process. An empty cwd
 // uses the sandbox default working directory; envs are terminal-session
-// environment variables (TERM/LANG/LC_ALL default to e2b's values).
+// environment variables (TERM defaults to xterm-256color; the locale is left
+// to the template image).
 func (c *Client) StartPTY(ctx context.Context, cols, rows int, cwd string, envs map[string]string) (*EventStream, uint32, error) {
 	if envs == nil {
 		envs = map[string]string{}
 	}
 	if _, ok := envs["TERM"]; !ok {
 		envs["TERM"] = "xterm-256color"
-	}
-	if _, ok := envs["LANG"]; !ok {
-		envs["LANG"] = "C.UTF-8"
-	}
-	if _, ok := envs["LC_ALL"]; !ok {
-		envs["LC_ALL"] = "C.UTF-8"
 	}
 	payload, err := json.Marshal(startRequest{
 		Process: &processConfig{
@@ -191,12 +187,15 @@ type EventStream struct {
 	body io.ReadCloser
 }
 
-// Next reads the next event. It returns io.EOF when the stream ends cleanly;
-// any other error indicates a transport or protocol failure.
+// Next reads the next event. It returns io.EOF only when the stream is
+// closed cleanly; real network errors (connection reset, timeouts) are
+// returned as-is so callers can tell a failure from a clean end.
 func (s *EventStream) Next() (*Event, error) {
 	var header [5]byte
 	if _, err := io.ReadFull(s.body, header[:]); err != nil {
-		if err == io.ErrUnexpectedEOF {
+		if !errors.Is(err, io.EOF) {
+			// Truncated mid-frame (ErrUnexpectedEOF) or a real network error (connection reset, etc.):
+			// returned as-is instead of being swallowed as a clean end.
 			return nil, fmt.Errorf(i18n.T(i18n.Msg.EnvD.StreamEndedMidFrame), err)
 		}
 		return nil, io.EOF

@@ -1,6 +1,6 @@
 // Package api provides primitives to interact with the openapi HTTP API.
 //
-// DevBox Manager API 的类型化客户端（原由 oapi-codegen 从 openapi.yaml 生成，现为手维护文件）。
+// Typed client for the DevBox Manager API (originally generated from openapi.yaml by oapi-codegen, now hand-maintained).
 package api
 
 import (
@@ -148,6 +148,7 @@ type Unavailable = Error
 type ListSandboxesParams struct {
 	Metadata  *string         `form:"metadata,omitempty" json:"metadata,omitempty"`
 	State     *[]SandboxState `form:"state,omitempty" json:"state,omitempty"`
+	Template  *string         `form:"template,omitempty" json:"template,omitempty"`
 	NextToken *string         `form:"nextToken,omitempty" json:"nextToken,omitempty"`
 	Limit     *int            `form:"limit,omitempty" json:"limit,omitempty"`
 }
@@ -550,6 +551,18 @@ func NewListSandboxesRequest(server string, params *ListSandboxesParams) (*http.
 		if params.State != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Template != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "template", *params.Template, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

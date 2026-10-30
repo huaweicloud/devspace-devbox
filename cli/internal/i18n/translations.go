@@ -195,6 +195,26 @@ func init() {
 				ZH: "沙箱 %s 已被终止",
 				EN: "sandbox %s has been killed",
 			},
+			KillAllConflict: Message{
+				ZH: "sandbox ID 和 --all 不能同时使用",
+				EN: "sandbox IDs and --all cannot be used together",
+			},
+			KillRequiresArgs: Message{
+				ZH: "请指定 sandbox ID 或使用 --all",
+				EN: "specify sandbox ID(s) or use --all",
+			},
+			FlagKillAll: Message{
+				ZH: "终止所有沙箱（默认 running 状态）",
+				EN: "kill all sandboxes (running state by default)",
+			},
+			FlagKillState: Message{
+				ZH: "与 --all 一起使用时按状态过滤（默认 running）",
+				EN: "when used with --all, filter by state (default running)",
+			},
+			FlagKillMetadata: Message{
+				ZH: "与 --all 一起使用时按元数据过滤",
+				EN: "when used with --all, filter by metadata",
+			},
 			PauseShort: Message{
 				ZH: "暂停沙箱",
 				EN: "Pause a sandbox",
@@ -274,6 +294,10 @@ func init() {
 			FlagMetadataFilter: Message{
 				ZH: "元数据过滤，如 \"user=abc&app=prod\"",
 				EN: `Metadata filter, e.g. "user=abc&app=prod"`,
+			},
+			FlagTemplateFilter: Message{
+				ZH: "按模板 ID 或别名过滤，如 base",
+				EN: "filter by template ID or alias, e.g. base",
 			},
 			FlagEnv: Message{
 				ZH: "环境变量 key=value（可重复）",
