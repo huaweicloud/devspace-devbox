@@ -40,6 +40,7 @@ export interface ConnectSandboxOptions {
 }
 
 export interface ListSandboxesOptions {
+  template?: string;
   metadata?: string;
   states?: readonly SandboxState[];
   limit?: number;
@@ -90,11 +91,12 @@ export class Sandboxes {
 
   async list(options: ListSandboxesOptions = {}): Promise<Page<SandboxInfo>> {
     const params: Record<string, string | number> = {};
+    if (options.template) params.template = options.template;
     if (options.metadata) params.metadata = options.metadata;
     if (options.states?.length) params.state = options.states.join(",");
     if (options.limit !== undefined) {
-      if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 100)
-        throw new RangeError("limit must be between 1 and 100");
+      if (!Number.isInteger(options.limit) || options.limit < 0 || options.limit > 1000)
+        throw new RangeError("limit must be between 0 and 1000 (0 means no limit)");
       params.limit = options.limit;
     }
     if (options.nextToken) params.nextToken = options.nextToken;

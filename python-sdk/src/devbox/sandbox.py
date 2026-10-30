@@ -96,13 +96,14 @@ class Sandboxes:
     def list(
         self,
         *,
+        template: str | None = None,
         metadata: str | None = None,
         states: Sequence[SandboxState | str] = (),
         limit: int | None = None,
         next_token: str | None = None,
     ) -> Page[SandboxInfo]:
         payload, headers = self._transport.request_with_headers(
-            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
+            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token, template)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
@@ -175,13 +176,14 @@ class AsyncSandboxes:
     async def list(
         self,
         *,
+        template: str | None = None,
         metadata: str | None = None,
         states: Sequence[SandboxState | str] = (),
         limit: int | None = None,
         next_token: str | None = None,
     ) -> Page[SandboxInfo]:
         payload, headers = await self._transport.request_with_headers(
-            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token)
+            "GET", "/sandboxes", params=_list_params(metadata, states, limit, next_token, template)
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
@@ -757,8 +759,11 @@ def _list_params(
     states: Sequence[SandboxState | str],
     limit: int | None,
     next_token: str | None,
+    template: str | None = None,
 ) -> dict[str, str | int]:
     params: dict[str, str | int] = {}
+    if template:
+        params["template"] = template
     if metadata:
         params["metadata"] = metadata
     if states:
@@ -766,8 +771,8 @@ def _list_params(
             item.value if isinstance(item, SandboxState) else item for item in states
         )
     if limit is not None:
-        if not 1 <= limit <= 100:
-            raise ValueError("limit must be between 1 and 100")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 0 <= limit <= 1000:
+            raise ValueError("limit must be an integer between 0 and 1000 (0 means no limit)")
         params["limit"] = limit
     if next_token:
         params["nextToken"] = next_token
