@@ -15,6 +15,10 @@ func init() {
 				ZH: "打印调试日志（含接口请求/返回）",
 				EN: "print debug logs (API requests/responses)",
 			},
+			VersionShort: Message{
+				ZH: "显示版本号",
+				EN: "show the version",
+			},
 		},
 		Auth: AuthMessages{
 			AuthShort: Message{

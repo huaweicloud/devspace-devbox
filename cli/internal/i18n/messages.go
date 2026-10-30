@@ -14,9 +14,10 @@ type Messages struct {
 }
 
 type CommonMessages struct {
-	RootShort   Message
-	RootLong    Message
-	FlagVerbose Message
+	RootShort    Message
+	RootLong     Message
+	FlagVerbose  Message
+	VersionShort Message
 }
 
 type AuthMessages struct {
