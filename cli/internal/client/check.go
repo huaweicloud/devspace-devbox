@@ -36,7 +36,7 @@ func VerifyAPIKey(ctx context.Context, server, apiKey string) error {
 
 	url := strings.TrimRight(server, "/") + DefaultCheckPath
 
-	// 校验接口是 POST(GET 路由不存在)，body 为空 JSON。
+	// The check endpoint is POST (no GET route), with an empty JSON body.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
 		return fmt.Errorf(i18n.T(i18n.Msg.Client.BuildVerifyRequest), err)

@@ -9,20 +9,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// templateCmd 实现 `devbox template`。
+// templateCmd implements `devbox template`.
 var templateCmd = &cobra.Command{
-	// Use 里的 "template|tpl" 仅用于帮助展示；命令匹配靠 Aliases。
+	// The "template|tpl" in Use is only for help display; matching relies on Aliases.
 	Use:     "template|tpl",
 	Aliases: []string{"template", "tpl"},
 	Short:   i18n.T(i18n.Msg.Template.TemplateShort),
 }
 
-// templateListCmd 实现 `devbox template list`，对应 GET /templates。
+// templateListCmd implements `devbox template list`, corresponding to GET /templates.
 var templateListFormat string
 
-// templateListCmd 实现 `devbox template list`，对应 GET /templates。
+// templateListCmd implements `devbox template list`, corresponding to GET /templates.
 var templateListCmd = &cobra.Command{
-	// Use 里的 "list|ls" 仅用于帮助展示；命令匹配靠 Aliases。
+	// The "list|ls" in Use is only for help display; matching relies on Aliases.
 	Use:     "list|ls",
 	Aliases: []string{"list", "ls"},
 	Short:   i18n.T(i18n.Msg.Template.ListShort),

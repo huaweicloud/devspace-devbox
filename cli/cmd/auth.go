@@ -12,13 +12,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// authCmd 实现 `devbox auth`。
+// authCmd implements `devbox auth`.
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: i18n.T(i18n.Msg.Auth.AuthShort),
 }
 
-// loginCmd 实现 `devbox auth login`。
+// loginCmd implements `devbox auth login`.
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: i18n.T(i18n.Msg.Auth.LoginShort),
@@ -27,7 +27,7 @@ var loginCmd = &cobra.Command{
 	RunE: runError(func(cmd *cobra.Command, args []string) error {
 		apiKey, _ := cmd.Flags().GetString("api-key")
 
-		// 1. 显式 --api-key：校验后存储。
+		// 1. explicit --api-key: verified and stored.
 		if apiKey != "" {
 			if err := auth.VerifyAPIKey(cmd.Context(), config.AuthCheckDomain, apiKey); err != nil {
 				return auth.LoginVerifyError(i18n.T(i18n.Msg.Auth.LoginFailed), err)
@@ -39,7 +39,7 @@ var loginCmd = &cobra.Command{
 			return nil
 		}
 
-		// 2. 复用已有凭据（对齐 devbridge：环境变量 > keyring/配置文件），先校验。
+		// 2. reuse existing credentials (aligned with devbridge: env var > keyring/config file), verify first.
 		if cred := auth.ReadValidAPIKey(); cred != nil && cred.APIKey != "" {
 			if err := auth.VerifyAPIKey(cmd.Context(), config.AuthCheckDomain, cred.APIKey); err != nil {
 				return auth.LoginVerifyError(i18n.T(i18n.Msg.Auth.LoginVerifyFailed), err)
@@ -48,12 +48,12 @@ var loginCmd = &cobra.Command{
 			return nil
 		}
 
-		// 3. 浏览器登录（登录页与校验地址均取构建期注入的配置）。
+		// 3. browser login (both the login page and the check address come from build-time config).
 		return auth.BrowserLogin(cmd.Context())
 	}),
 }
 
-// logoutCmd 实现 `devbox auth logout`。
+// logoutCmd implements `devbox auth logout`.
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: i18n.T(i18n.Msg.Auth.LogoutShort),
@@ -67,7 +67,7 @@ var logoutCmd = &cobra.Command{
 	}),
 }
 
-// statusCmd 实现 `devbox auth status`。
+// statusCmd implements `devbox auth status`.
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: i18n.T(i18n.Msg.Auth.StatusShort),

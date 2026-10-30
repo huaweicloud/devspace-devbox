@@ -1,0 +1,77 @@
+# =============================================================================
+# GoReleaser config — prod environment
+#
+# Usage:
+#   goreleaser release --clean                     # derive version from git tag and publish
+#   goreleaser release --clean --skip=publish      # build only (artifacts to dist/)
+#
+# Artifacts:
+#   dist/devbox_{os}_{arch}_{version}[.exe].tar.gz      ×6 platform archives
+#   dist/checksums.txt                                  SHA256 checksums
+#   dist-extra/install.sh / install.ps1                 baked install scripts
+#
+# Release assets (GitHub):
+#   6 tar.gz + checksums.txt + install.sh + install.ps1
+#
+# Note: after.hooks is a GoReleaser Pro feature, unsupported in the OSS build.
+# GitCode upload is a separate workflow step (post-release.sh).
+# =============================================================================
+version: 2
+
+project_name: devbox
+
+before:
+  hooks:
+    - go test ./...
+    # Bake install scripts: inject version + GitHub Release URL
+    - ./scripts/bake-install.sh {{ .Version }} "https://github.com/huaweicloud/devspace-devbox/releases/download/{{ .Version }}"
+
+builds:
+  - id: devbox
+    main: ./cmd/devbox
+    binary: devbox_{{ .Os }}_{{ .Arch }}_{{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/huaweicloud/devspace-devbox/cli/cmd.Version={{ .Version }}
+      - -X github.com/huaweicloud/devspace-devbox/cli/internal/config.DefaultServer=https://devbox-test.developer.myhuaweicloud.com
+      - -X github.com/huaweicloud/devspace-devbox/cli/internal/config.LoginURL=https://devstation.connect.huaweicloud.com
+      - -X github.com/huaweicloud/devspace-devbox/cli/internal/config.AuthCheckDomain=https://bridge.developer.myhuaweicloud.com
+    flags:
+      - -trimpath
+    buildmode: pie
+
+archives:
+  - formats:
+      - tar.gz
+    # Align with install.sh: devbox_{os}_{arch}_{version}[.exe].tar.gz
+    # Note: no .tar.gz suffix here; GoReleaser appends it based on `formats`
+    name_template: >-
+      devbox_{{ .Os }}_{{ .Arch }}_{{ .Version }}{{ if eq .Os "windows" }}.exe{{ end }}
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: git
+
+release:
+  github:
+    owner: huaweicloud
+    name: devspace-devbox
+  # Baked install scripts as extra release assets
+  extra_files:
+    - glob: ./dist-extra/install.sh
+    - glob: ./dist-extra/install.ps1
+  draft: false
+  prerelease: false
+  name_template: "devbox-cli-{{ replace .Version \"-release\" \"\" }}"

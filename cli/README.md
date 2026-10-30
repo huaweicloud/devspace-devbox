@@ -60,7 +60,7 @@ devbox sbx ex <sandboxID> <command> -b              # 后台执行，打印 PID
 
 说明：
 - `create`/`connect` 默认进入交互式终端，本地终端成为沙箱 shell，输入 `exit` 退出
-- `create` 的 `-e` 是沙箱级环境变量（经 /init 下发）；`connect`/终端的 `-e` 是本次终端会话的环境变量
+- `create`/`connect` 的 `-e` 都是终端会话的环境变量（对齐 e2b：不持久化到沙箱，`exit` 后消失）
 - `-t/-d` 非必传：不传用默认值 300，传了做范围校验（10-86400 秒，显式 0 报错）
 - sandboxID 必须为 36 位小写字母、数字和中划线
 

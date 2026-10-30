@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/envd"
@@ -27,7 +28,7 @@ type Session struct {
 	cwd  string
 	envs map[string]string
 
-	sawOutput bool
+	sawOutput atomic.Bool
 }
 
 // New builds a Session wired to the given envd client and local files
@@ -61,9 +62,9 @@ func (s *Session) Run(ctx context.Context) (*envd.EndEvent, error) {
 	}
 
 	for attempt := 1; ; attempt++ {
-		s.sawOutput = false
+		s.sawOutput.Store(false)
 		end, err := s.runOnce(ctx, cols, rows)
-		if err != nil && !s.sawOutput && attempt < maxStartAttempts {
+		if err != nil && !s.sawOutput.Load() && attempt < maxStartAttempts {
 			// Transport errors before any output (e.g. a transient gateway
 			// "Bad gateway" while the sandbox is still waking up) are
 			// retryable.
@@ -73,7 +74,7 @@ func (s *Session) Run(ctx context.Context) (*envd.EndEvent, error) {
 		if err != nil {
 			return nil, err
 		}
-		if end != nil && !s.sawOutput && attempt < maxStartAttempts {
+		if end != nil && !s.sawOutput.Load() && attempt < maxStartAttempts {
 			// The shell exited without any output: the sandbox may still be
 			// waking up (autoResume). Retry after a short delay.
 			time.Sleep(time.Second)
@@ -111,7 +112,7 @@ func (s *Session) runOnce(ctx context.Context, cols, rows int) (*envd.EndEvent, 
 				return
 			}
 			if ev.Data != nil {
-				s.sawOutput = true
+				s.sawOutput.Store(true)
 				if _, werr := s.out.Write(ev.Data); werr != nil {
 					errCh <- werr
 					cancel()

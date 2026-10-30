@@ -1,0 +1,501 @@
+# DevBox CLI PowerShell install script
+function Install-DevBox {
+    [CmdletBinding()]
+    param(
+        [string]$Version = "",
+        [string]$Url = "",
+        [string]$Prefix = "",
+        [switch]$Silent,
+        [switch]$SkipChecksum,
+        [switch]$Help
+    )
+
+    $ErrorActionPreference = "Continue"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    # ---------------------------------------------------------------------------
+    # Global configuration
+    # ---------------------------------------------------------------------------
+    $Script:APP_NAME = "devbox"
+    $Script:APP_DISPLAY_NAME = "DevBox"
+    $Script:INSTALL_DIR = if ($Prefix) { $Prefix } else { Join-Path $HOME ".huawei\bin" }
+    $Script:CONFIG_DIR = Join-Path $HOME ".devbox"
+    $Script:DEFAULT_ARTIFACT_URL = "https://github.com/huaweicloud/devspace-devbox/releases/download/0.1.0-release"
+    $Script:DEFAULT_VERSION = "0.1.0-release"
+    $Script:ARTIFACT_URL = if ($Url) { $Url } elseif ($env:ARTIFACT_URL_FROM_ENV) { $env:ARTIFACT_URL_FROM_ENV } else { "" }
+    $Script:VERSION = if ($Version) { $Version } elseif ($env:APP_VERSION) { $env:APP_VERSION } else { $Script:DEFAULT_VERSION }
+    $Script:SKIP_CHECKSUM = $SkipChecksum
+    $Script:SILENT_MODE = $Silent
+    $Script:PLATFORM = ""
+    $Script:GOOS = ""
+    $Script:ARCH = ""
+    $Script:EXE_SUFFIX = ""
+
+    # ---------------------------------------------------------------------------
+    # Log helpers
+    # ---------------------------------------------------------------------------
+    function Write-Info { param([string]$Msg) Write-Host "[INFO]  $Msg" -ForegroundColor Green }
+    function Write-Warn { param([string]$Msg) Write-Host "[WARN]  $Msg" -ForegroundColor Yellow }
+    function Write-Step { param([string]$Msg) Write-Host $Msg -ForegroundColor Gray }
+    function Write-ErrorAndExit {
+        param([string]$Msg)
+        Write-Host "[ERROR] $Msg" -ForegroundColor Red
+        throw $Msg
+    }
+
+    # Get-FileSha256 - compute the file SHA256 hash (lowercase)
+    function Get-FileSha256 {
+        param([string]$Path)
+        return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLower()
+    }
+
+    # Get-WebContent - fetch remote URL text content
+    function Get-WebContent {
+        param([string]$Url, [switch]$BestEffort)
+        try {
+            $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -ErrorAction Stop
+            if ($resp.Content -is [byte[]]) {
+                return [System.Text.Encoding]::UTF8.GetString($resp.Content)
+            }
+            return $resp.Content
+        } catch {
+            if (-not $BestEffort) {
+                Write-ErrorAndExit "Failed to fetch from ${Url}: $($_.Exception.Message)"
+            }
+            return ""
+        }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Welcome banner
+    # ---------------------------------------------------------------------------
+    function Show-Welcome {
+        Write-Host ""
+        Write-Host "+==================================================+" -ForegroundColor Blue
+        Write-Host "|           DevBox Installation Wizard            |" -ForegroundColor Blue
+        Write-Host "+==================================================+" -ForegroundColor Blue
+        Write-Host "  Welcome to $Script:APP_DISPLAY_NAME One-Click Installation Script" -ForegroundColor DarkYellow
+        Write-Host ""
+    }
+
+    # ---------------------------------------------------------------------------
+    # usage
+    # ---------------------------------------------------------------------------
+    function Show-Usage {
+        @"
+$Script:APP_DISPLAY_NAME Installer (PowerShell)
+
+Usage: install.ps1 [options]
+
+Options:
+    -Version VERSION     Version to install (default: $($Script:DEFAULT_VERSION))
+    -Url URL             Base URL of artifact repository (default: $($Script:DEFAULT_ARTIFACT_URL))
+    -Prefix DIR          Installation prefix (default: $($Script:INSTALL_DIR))
+    -Silent              Silent mode, skip interactive prompts
+    -SkipChecksum        Skip SHA256 checksum verification
+    -Help                Show this help message
+
+Examples:
+    # GitHub one-click:
+    irm https://github.com/huaweicloud/devspace-devbox/releases/latest/download/install.ps1 | iex
+    # GitCode one-click:
+    irm https://gitcode.com/CloudDeveloperDepartment/devbox/releases/download/latest/install.ps1 | iex
+    # Explicit version / mirror:
+    .\install.ps1 -Version 1.0.0
+    .\install.ps1 -Url https://gitcode.com/CloudDeveloperDepartment/devbox/releases/download/<version> -Version 1.0.0
+
+Note:
+    Without -Url, the script downloads from the baked-in DEFAULT_ARTIFACT_URL
+    (GitHub / GitCode, depending on where the script was obtained).
+
+Environment Variables:
+    ARTIFACT_URL_FROM_ENV  Same as -Url (skips mirror probing)
+    APP_VERSION            Same as -Version
+"@
+        return
+    }
+
+    # ---------------------------------------------------------------------------
+    # Detect-Platform - detect the OS and CPU architecture
+    # ---------------------------------------------------------------------------
+    function Detect-Platform {
+        $os = ""
+        $arch = ""
+
+        if ($IsLinux -or ($env:OS -eq "Linux")) {
+            $os = "Linux"
+        } elseif ($IsMacOS -or ($env:OS -eq "Darwin")) {
+            $os = "Darwin"
+        } elseif ($IsWindows -or ($env:OS -eq "Windows_NT")) {
+            $os = "Windows"
+        } else {
+            Write-ErrorAndExit "Unsupported OS: $([System.Environment]::OSVersion.Platform)"
+        }
+
+        $cpu = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+        if ($cpu -eq [System.Runtime.InteropServices.Architecture]::X64) {
+            $arch = "amd64"
+        } elseif ($cpu -eq [System.Runtime.InteropServices.Architecture]::Arm64) {
+            $arch = "arm64"
+        } elseif ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
+            $arch = "amd64"
+        } elseif ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
+            $arch = "arm64"
+        } else {
+            Write-ErrorAndExit "Unsupported architecture: $cpu"
+        }
+
+        $Script:PLATFORM = "${os}_${arch}"
+        $Script:GOOS = $os.ToLower()
+        $Script:ARCH = $arch
+        $Script:EXE_SUFFIX = if ($Script:GOOS -eq "windows") { ".exe" } else { "" }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Check-Platform - verify the platform combination is supported
+    # ---------------------------------------------------------------------------
+    function Check-Platform {
+        $supported = @("Linux_amd64", "Linux_arm64", "Darwin_amd64", "Darwin_arm64", "Windows_amd64", "Windows_arm64")
+
+        if ($supported -notcontains $Script:PLATFORM) {
+            Write-Host "Installation failed." -ForegroundColor Red
+            Write-Host "Cause: Unsupported platform: $($Script:PLATFORM)" -ForegroundColor Yellow
+            Write-Host "Supported: $($supported -join ' ')" -ForegroundColor Gray
+            throw "Unsupported platform: $($Script:PLATFORM)"
+        }
+
+        Write-Step "Detected platform: $($Script:PLATFORM)"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Get-BinaryName - get the remote artifact tar.gz package name
+    # ---------------------------------------------------------------------------
+    function Get-BinaryName {
+        return "$($Script:APP_NAME)_$($Script:GOOS)_$($Script:ARCH)_$($Script:VERSION)$($Script:EXE_SUFFIX).tar.gz"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Get-BinaryNameInside - get the binary filename inside the tar (without the .tar.gz suffix)
+    # ---------------------------------------------------------------------------
+    function Get-BinaryNameInside {
+        return "$($Script:APP_NAME)_$($Script:GOOS)_$($Script:ARCH)_$($Script:VERSION)$($Script:EXE_SUFFIX)"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Get-BinaryPath - get the installed binary path
+    # ---------------------------------------------------------------------------
+    function Get-BinaryPath {
+        return Join-Path $Script:INSTALL_DIR "$($Script:APP_NAME)$($Script:EXE_SUFFIX)"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Invoke-HttpGet - unified download helper
+    # ---------------------------------------------------------------------------
+    function Invoke-HttpGet {
+        param([string]$Url, [string]$Output, [switch]$BestEffort)
+
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $Output -UseBasicParsing -ErrorAction Stop
+        } catch {
+            if (-not $BestEffort) {
+                Write-ErrorAndExit "Failed to download from ${Url}: $_"
+            }
+        }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Check-ExistingInstall - check whether it is already installed
+    # ---------------------------------------------------------------------------
+    function Check-ExistingInstall {
+        $binaryPath = Get-BinaryPath
+
+        if (-not (Test-Path $binaryPath)) {
+            return $false
+        }
+
+        if ($Script:SILENT_MODE) {
+            if (Test-RemoteHash $binaryPath) {
+                Write-Info "$Script:APP_DISPLAY_NAME is already up to date."
+                return $true
+            }
+            return $false
+        }
+
+        Write-Host "The $Script:APP_DISPLAY_NAME has been installed." -ForegroundColor DarkYellow
+        Write-Host "  $binaryPath"
+        $response = Read-Host "Do you want to overwrite it? [y/N]"
+        if ($response -match '^[yY]$') {
+            return $false
+        }
+        return $true
+    }
+
+    # ---------------------------------------------------------------------------
+    # Test-RemoteHash - compare the installed version with the target version.
+    #
+    # GoReleaser artifacts: checksums.txt is at the Release root, the tar.gz only holds
+    # the binary. Compare the installed binary's version output with the target instead.
+    # ---------------------------------------------------------------------------
+    function Test-RemoteHash {
+        param([string]$BinaryPath)
+
+        $installedVersion = & $BinaryPath version 2>$null
+        if (-not $installedVersion) { $installedVersion = "unknown" }
+
+        Write-Step "Installed version: $installedVersion"
+        Write-Step "Target version:    $($Script:VERSION)"
+
+        return $installedVersion -eq $Script:VERSION
+    }
+
+    # ---------------------------------------------------------------------------
+    # Prompt-CleanOldData - prompt to clean old config data
+    # ---------------------------------------------------------------------------
+    function Prompt-CleanOldData {
+        if ($Script:SILENT_MODE) { return }
+        if (-not (Test-Path $Script:CONFIG_DIR)) { return }
+
+        Write-Host "The $Script:APP_DISPLAY_NAME has old config data." -ForegroundColor DarkYellow
+        Write-Host "  $($Script:CONFIG_DIR)"
+        $response = Read-Host "Do you want to clean old config data? [y/N]"
+        if ($response -match '^[yY]$') {
+            try {
+                Remove-Item -Path $Script:CONFIG_DIR -Recurse -Force -ErrorAction Stop
+                Write-Host "✓ Clean old config data completed." -ForegroundColor Green
+            } catch {
+                Write-Host "✗ Clean old config data failed." -ForegroundColor Red
+            }
+        }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Resolve-TarCommand - locate an available tar command.
+    #
+    # Windows 10 1803+ bundles tar.exe under C:\Windows\System32, but some managed
+    # environments drop System32 from PATH, breaking a bare `tar` call.
+    # Lookup order: PATH -> System32 -> Git install directory.
+    # ---------------------------------------------------------------------------
+    function Resolve-TarCommand {
+        # 1. tar is already on PATH
+        $cmd = Get-Command tar -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+
+        # 2. Windows built-in tar.exe (System32 / SysWOW64)
+        $sysPaths = @(
+            Join-Path $env:SystemRoot "System32\tar.exe"
+            Join-Path $env:SystemRoot "SysWOW64\tar.exe"
+        )
+        foreach ($p in $sysPaths) {
+            if (Test-Path $p) { return $p }
+        }
+
+        # 3. tar.exe bundled with Git for Windows
+        $gitPaths = @(
+            "C:\Program Files\Git\usr\bin\tar.exe",
+            "C:\Program Files (x86)\Git\usr\bin\tar.exe"
+        )
+        foreach ($p in $gitPaths) {
+            if (Test-Path $p) { return $p }
+        }
+
+        return $null
+    }
+
+
+    # ---------------------------------------------------------------------------
+    # Download-Binary - download and extract the tar.gz package from the remote.
+    #
+    # Source: explicit -Url wins, otherwise DEFAULT_ARTIFACT_URL (baked per channel).
+    # Returns the extracted binary path (checksums.txt is alongside, for Verify-Checksum).
+    # ---------------------------------------------------------------------------
+    function Download-Binary {
+        param([string]$Url, [string]$OutputDir)
+
+        $tarballName = Get-BinaryName
+        $localTarball = Join-Path $OutputDir $tarballName
+
+        $mirror = if ($Url) { $Url } else { $Script:DEFAULT_ARTIFACT_URL }
+        $remoteUrl = "${mirror}/${tarballName}"
+
+        Write-Step "Downloading from ${remoteUrl} ..."
+        Invoke-HttpGet -Url $remoteUrl -Output $localTarball
+
+        # Download checksums.txt (GoReleaser checksum file; best-effort: old Releases may lack it)
+        $checksumsUrl = "${mirror}/checksums.txt"
+        Write-Step "Downloading ${checksumsUrl} ..."
+        $checksumsPath = Join-Path $OutputDir "checksums.txt"
+        Invoke-HttpGet -Url $checksumsUrl -Output $checksumsPath -BestEffort
+
+        # Extract the tar.gz (Windows 10+ ships tar)
+        Write-Step "Extracting ${tarballName} ..."
+        $tarCmd = Resolve-TarCommand
+        if (-not $tarCmd) {
+            Write-ErrorAndExit @"
+tar command not found. Cannot extract ${tarballName}.
+Possible fixes:
+  1. Ensure C:\Windows\System32 is in your PATH (Windows 10 1803+ has built-in tar.exe)
+  2. Install Git for Windows: winget install Git.Git
+  3. Re-run this installer after adding tar to PATH
+"@
+        }
+
+        & $tarCmd xzf "$localTarball" -C "$OutputDir"
+
+        # Return the extracted binary path
+        $binaryNameInside = Get-BinaryNameInside
+        return Join-Path $OutputDir $binaryNameInside
+    }
+
+    # ---------------------------------------------------------------------------
+    # Verify-Checksum - verify the SHA256 hash of the binary
+    # ---------------------------------------------------------------------------
+    function Verify-Checksum {
+        param([string]$BinaryFile)
+
+        # GoReleaser artifacts: checksums.txt is at the Release root; the tar.gz is the checksum target
+        $tarballFile = "${BinaryFile}.tar.gz"
+        $checksumsFile = Join-Path (Split-Path $BinaryFile) "checksums.txt"
+
+        if ($Script:SKIP_CHECKSUM) {
+            Write-Warn "Skipping checksum verification"
+            return
+        }
+
+        if (-not (Test-Path $checksumsFile)) {
+            Write-Warn "checksums.txt not found, skipping checksum verification"
+            return
+        }
+
+        if (-not (Test-Path $tarballFile)) {
+            Write-Warn "Archive $tarballFile not found, skipping checksum verification"
+            return
+        }
+
+        $localHash = Get-FileSha256 -Path $tarballFile
+
+        # checksums.txt format: <hash>  <filename>; find the hash matching the tar.gz
+        $tarballBasename = Split-Path $tarballFile -Leaf
+        $remoteHash = ""
+        foreach ($line in (Get-Content $checksumsFile)) {
+            if ($line -match "\s+$($tarballBasename)$") {
+                $remoteHash = ($line -split "\s+")[0]
+                break
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($remoteHash)) {
+            Write-Warn "Remote hash is empty, skipping checksum verification"
+            return
+        }
+
+        if ($localHash -eq $remoteHash) {
+            return
+        }
+
+        Write-ErrorAndExit "Checksum verification failed for ${tarballFile}"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Install-Binary - install the binary into INSTALL_DIR
+    # ---------------------------------------------------------------------------
+    function Install-Binary {
+        param([string]$BinaryFile)
+
+        if (-not (Test-Path $Script:INSTALL_DIR)) {
+            New-Item -ItemType Directory -Path $Script:INSTALL_DIR -Force | Out-Null
+        }
+
+        $installPath = Get-BinaryPath
+        Copy-Item -Path $BinaryFile -Destination $installPath -Force
+
+        Write-Host "✓ Binary installed to: $installPath" -ForegroundColor Green
+        Write-Host "✓ Installation $Script:APP_DISPLAY_NAME completed." -ForegroundColor Green
+    }
+
+    # ---------------------------------------------------------------------------
+    # Add-ToPath - add the install directory to PATH
+    # ---------------------------------------------------------------------------
+    function Add-ToPath {
+        $binPath = $Script:INSTALL_DIR
+
+        $currentPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        if ($currentPath -split ';' -contains $binPath) {
+            Write-Host "✓ PATH already contains $binPath" -ForegroundColor Green
+            return
+        }
+
+        [System.Environment]::SetEnvironmentVariable("Path", "${binPath};${currentPath}", "User")
+        Write-Host "✓ Successfully added $binPath to user PATH" -ForegroundColor Green
+    }
+
+    # ---------------------------------------------------------------------------
+    # Verify-Installation - verify the installation
+    # ---------------------------------------------------------------------------
+    function Verify-Installation {
+        $binaryPath = Get-BinaryPath
+
+        if (Test-Path $binaryPath) {
+            $installedVersion = & $binaryPath version 2>$null
+            if (-not $installedVersion) { $installedVersion = "unknown" }
+            Write-Host "✓ Installation successful! $Script:APP_DISPLAY_NAME version: $installedVersion" -ForegroundColor Green
+        } else {
+            Write-Warn "$Script:APP_DISPLAY_NAME binary not found at $binaryPath"
+        }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Show-PostInstallNotice - show the post-install notice
+    # ---------------------------------------------------------------------------
+    function Show-PostInstallNotice {
+        Write-Host ""
+        Write-Host "+==================================================+" -ForegroundColor Blue
+        Write-Host "|                      NOTICE                      |" -ForegroundColor Blue
+        Write-Host "+==================================================+" -ForegroundColor Blue
+        Write-Host "To apply changes immediately:"
+        Write-Host "  Restart your terminal" -ForegroundColor DarkYellow
+        Write-Host "  Or run: `$env:Path = [System.Environment]::GetEnvironmentVariable('Path','User')" -ForegroundColor DarkYellow
+    }
+
+    # ---------------------------------------------------------------------------
+    # main - entrypoint
+    # ---------------------------------------------------------------------------
+    function Main {
+        if ($Help) { Show-Usage }
+
+        Show-Welcome
+        Detect-Platform
+        Check-Platform
+
+        if ([string]::IsNullOrEmpty($Script:VERSION)) {
+            Write-ErrorAndExit "No version specified. Use -Version <version>, or run the CI-built install script which has a built-in version."
+        }
+
+        Write-Step "Artifact URL: $($Script:ARTIFACT_URL)"
+        Write-Step "Version: $($Script:VERSION)"
+
+        if (Check-ExistingInstall) {
+            Show-PostInstallNotice
+            return
+        }
+
+        Prompt-CleanOldData
+
+        $downloadDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "devbox-install-$(Get-Random)") -Force
+
+        Write-Step "Downloading from remote repository: $($Script:ARTIFACT_URL)"
+
+        $binaryFile = Download-Binary -Url $Script:ARTIFACT_URL -OutputDir $downloadDir.FullName
+        if (-not (Test-Path $binaryFile)) {
+            Write-ErrorAndExit "Failed to download binary"
+        }
+
+        Verify-Checksum -BinaryFile $binaryFile
+        Install-Binary -BinaryFile $binaryFile
+        Add-ToPath
+        Verify-Installation
+        Show-PostInstallNotice
+    }
+
+    Main
+}
+
+Install-DevBox @args
