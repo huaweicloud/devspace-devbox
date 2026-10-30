@@ -1,0 +1,186 @@
+# =============================================================================
+# Build and release the DevBox CLI with GoReleaser.
+#
+# Triggers:
+#   pull_request      Build-only verification (goreleaser build --snapshot).
+#   workflow_dispatch Manual build, with optional release publishing.
+#
+# Release rules:
+#   PR                          → build only, never publish.
+#   version contains "release"  → publish GitHub + GitCode release.
+#   otherwise                   → build and package, skip publish.
+#
+# Artifacts: 6 platform tar.gz + checksums.txt + baked install.sh/install.ps1.
+# Targets: GitHub Release and GitCode Release (CloudDeveloperDepartment/devbox).
+#
+# NOTE: gitcode_token is passed as a workflow input because this repo cannot
+# store secrets (no write access). It is visible to anyone with read access;
+# move it to a repository secret once admin access is available.
+# =============================================================================
+name: Build CLI
+
+on:
+  pull_request:
+    branches: [dev, main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空则用 git describe --tags --always）'
+        required: false
+        default: ''
+      env:
+        description: '环境'
+        required: false
+        default: 'prod'
+        type: choice
+        options: [test, prod]
+      gitcode_token:
+        description: 'GitCode 令牌（留空则跳过 GitCode 上传）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout full history so git describe can see all tags.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Resolve version, environment, and the release flag.
+      - name: Resolve metadata
+        id: meta
+        run: |
+          # version: input first, else git describe
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "  版本号: $VERSION"
+
+          # env: input first; empty on PR → default test
+          ENV="${{ inputs.env }}"
+          if [ -z "$ENV" ]; then
+            ENV="test"
+          fi
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+          echo "  环境: $ENV"
+
+          # never publish on PR, even when the version contains "release"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "is_pr=true" >> "$GITHUB_OUTPUT"
+            echo "  发布 Release: 否（PR 触发，跳过发布）"
+          elif echo "$VERSION" | grep -qi "release"; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+            echo "  发布 Release: 是"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+            echo "  发布 Release: 否（仅构建，不发布 Release）"
+          fi
+
+          # pick the GoReleaser config for the environment
+          if [ "$ENV" = "test" ]; then
+            CONFIG=".goreleaser.test.yaml"
+          else
+            CONFIG=".goreleaser.yaml"
+          fi
+          echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "  GoReleaser config: $CONFIG"
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: cli/go.sum
+
+      - name: Setup GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          install-only: true
+
+      # Create a local tag (GoReleaser derives the version from it); skipped for PR snapshot.
+      - name: Create local tag
+        if: steps.meta.outputs.is_pr != 'true'
+        working-directory: cli
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          git tag -f "${VERSION}" HEAD
+          echo "已创建本地 tag: ${VERSION}"
+
+      # PR: build only.
+      - name: Build (PR snapshot)
+        if: steps.meta.outputs.is_pr == 'true'
+        working-directory: cli
+        run: |
+          goreleaser build --snapshot --clean --config ${{ steps.meta.outputs.config }}
+          echo "✓ PR 编译验证通过"
+
+      # Non-release: build and package without publishing.
+      - name: Build (no release)
+        if: steps.meta.outputs.is_pr != 'true' && steps.meta.outputs.is_release != 'true'
+        working-directory: cli
+        run: |
+          goreleaser release --clean --skip=publish \
+            --config ${{ steps.meta.outputs.config }}
+
+      # Release: build and publish to GitHub.
+      - name: Release
+        if: steps.meta.outputs.is_release == 'true'
+        working-directory: cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          goreleaser release --clean --config ${{ steps.meta.outputs.config }}
+
+      # Upload to GitCode (release + token provided).
+      # GoReleaser's after.hooks is Pro-only, so the OSS build does this as a step.
+      - name: Upload to GitCode
+        if: steps.meta.outputs.is_release == 'true' && inputs.gitcode_token != ''
+        working-directory: cli
+        env:
+          GITCODE_TOKEN: ${{ inputs.gitcode_token }}
+        run: |
+          ./scripts/post-release.sh ${{ steps.meta.outputs.version }}
+
+      # Verify the injected version by running the Linux binary.
+      - name: Verify injected version
+        if: steps.meta.outputs.is_pr != 'true'
+        working-directory: cli
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARBALL="dist/devbox_linux_amd64_${VERSION}.tar.gz"
+          if [ ! -f "$TARBALL" ]; then
+            echo "⚠️  tar.gz 不存在（可能是 snapshot 模式只编译不打包），跳过验证"
+            exit 0
+          fi
+          mkdir -p /tmp/verify
+          tar xzf "$TARBALL" -C /tmp/verify
+          BIN="/tmp/verify/devbox_linux_amd64_${VERSION}"
+          echo "实际注入的版本号: $("$BIN" version)"
+          [ "$("$BIN" version)" = "${VERSION}" ] || \
+            { echo "❌ 版本号注入不匹配！"; exit 1; }
+          rm -rf /tmp/verify
+
+      # Upload artifacts as a backup.
+      - name: Upload artifacts
+        if: steps.meta.outputs.is_pr != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: devbox-${{ steps.meta.outputs.version }}
+          path: |
+            cli/dist/devbox_*.tar.gz
+            cli/dist/checksums.txt
+            cli/dist-extra/install.sh
+            cli/dist-extra/install.ps1
+          if-no-files-found: warn
