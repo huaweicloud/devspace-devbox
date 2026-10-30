@@ -117,6 +117,42 @@ func (p *ProcessClient) Start(ctx context.Context, cfg *process.ProcessConfig, s
 	return p.rpc.Start(ctx, req)
 }
 
+// StartPTY starts an interactive shell with a PTY of the given size and
+// returns the event stream. The first event carries the process PID.
+func (p *ProcessClient) StartPTY(ctx context.Context, cfg *process.ProcessConfig, cols, rows int) (*connect.ServerStreamForClient[process.StartResponse], error) {
+	stdin := true
+	req := connect.NewRequest(&process.StartRequest{
+		Process: cfg,
+		Stdin:   &stdin,
+		Pty:     &process.PTY{Size: &process.PTY_Size{Cols: uint32(cols), Rows: uint32(rows)}},
+	})
+	return p.rpc.Start(ctx, req)
+}
+
+// SendPtyInput writes bytes to the PTY of a running process.
+func (p *ProcessClient) SendPtyInput(ctx context.Context, pid uint32, data []byte) error {
+	_, err := p.rpc.SendInput(ctx, connect.NewRequest(&process.SendInputRequest{
+		Process: &process.ProcessSelector{
+			Selector: &process.ProcessSelector_Pid{Pid: pid},
+		},
+		Input: &process.ProcessInput{
+			Input: &process.ProcessInput_Pty{Pty: data},
+		},
+	}))
+	return err
+}
+
+// UpdateSize resizes the PTY of a running process.
+func (p *ProcessClient) UpdateSize(ctx context.Context, pid uint32, cols, rows int) error {
+	_, err := p.rpc.Update(ctx, connect.NewRequest(&process.UpdateRequest{
+		Process: &process.ProcessSelector{
+			Selector: &process.ProcessSelector_Pid{Pid: pid},
+		},
+		Pty: &process.PTY{Size: &process.PTY_Size{Cols: uint32(cols), Rows: uint32(rows)}},
+	}))
+	return err
+}
+
 // SendInput writes bytes to the stdin of a running process.
 func (p *ProcessClient) SendInput(ctx context.Context, pid uint32, data []byte) error {
 	_, err := p.rpc.SendInput(ctx, connect.NewRequest(&process.SendInputRequest{

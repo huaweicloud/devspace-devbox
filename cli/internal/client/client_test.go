@@ -155,8 +155,8 @@ func TestListSandboxes(t *testing.T) {
 	if len(res.Sandboxes) != 2 {
 		t.Fatalf("expected 2 sandboxes, got %d", len(res.Sandboxes))
 	}
-	if res.NextToken != "token-123" || res.TotalRunning != 7 {
-		t.Errorf("unexpected pagination meta: token=%q total=%d", res.NextToken, res.TotalRunning)
+	if res.NextToken != "token-123" {
+		t.Errorf("unexpected pagination meta: token=%q", res.NextToken)
 	}
 	if res.Sandboxes[0].SandboxID != "sb-1" {
 		t.Errorf("unexpected first sandbox: %s", res.Sandboxes[0].SandboxID)

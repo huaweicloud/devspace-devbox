@@ -5,12 +5,12 @@ package term
 
 import (
 	"context"
-	"io"
 	"os"
 	"sync/atomic"
 	"time"
 
-	"github.com/huaweicloud/devspace-devbox/cli/internal/envd"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/api/processgen/process"
+	"github.com/huaweicloud/devspace-devbox/cli/internal/client"
 
 	"golang.org/x/term"
 )
@@ -22,7 +22,7 @@ const maxStartAttempts = 3
 
 // Session runs one interactive terminal against a sandbox PTY.
 type Session struct {
-	ec   *envd.Client
+	pc   *client.ProcessClient
 	in   *os.File
 	out  *os.File
 	cwd  string
@@ -31,30 +31,27 @@ type Session struct {
 	sawOutput atomic.Bool
 }
 
-// New builds a Session wired to the given envd client and local files
+// New builds a Session wired to the given process client and local files
 // (typically os.Stdin and os.Stdout). An empty cwd uses the sandbox default
 // working directory; envs are terminal-session environment variables.
-func New(ec *envd.Client, in, out *os.File, cwd string, envs map[string]string) *Session {
-	return &Session{ec: ec, in: in, out: out, cwd: cwd, envs: envs}
+func New(pc *client.ProcessClient, in, out *os.File, cwd string, envs map[string]string) *Session {
+	return &Session{pc: pc, in: in, out: out, cwd: cwd, envs: envs}
 }
 
 // Run starts the remote shell and pumps input/output until the shell exits
 // or the context is cancelled. It returns the end event of the remote shell
 // (nil when the session ended without one) and restores the terminal state
 // on return.
-func (s *Session) Run(ctx context.Context) (*envd.EndEvent, error) {
+func (s *Session) Run(ctx context.Context) (*process.ProcessEvent_EndEvent, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	raw := false
 	if term.IsTerminal(int(s.in.Fd())) {
 		if old, err := term.MakeRaw(int(s.in.Fd())); err == nil {
-			raw = true
 			defer func() { _ = term.Restore(int(s.in.Fd()), old) }()
 			_ = enableVT(s.out)
 		}
 	}
-	_ = raw
 
 	cols, rows := 80, 24
 	if w, h, err := term.GetSize(int(s.out.Fd())); err == nil && w > 0 && h > 0 {
@@ -87,53 +84,89 @@ func (s *Session) Run(ctx context.Context) (*envd.EndEvent, error) {
 // runOnce starts one PTY stream and pumps I/O until it ends. It returns the
 // shell's end event (nil when the stream ended without one) and a non-nil
 // error for transport failures.
-func (s *Session) runOnce(ctx context.Context, cols, rows int) (*envd.EndEvent, error) {
+func (s *Session) runOnce(ctx context.Context, cols, rows int) (*process.ProcessEvent_EndEvent, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	errCh := make(chan error, 2)
-	endCh := make(chan *envd.EndEvent, 1)
+	endCh := make(chan *process.ProcessEvent_EndEvent, 1)
 
-	stream, pid, err := s.ec.StartPTY(ctx, cols, rows, s.cwd, s.envs)
+	envs := s.envs
+	if envs == nil {
+		envs = map[string]string{}
+	}
+	if _, ok := envs["TERM"]; !ok {
+		envs["TERM"] = "xterm-256color"
+	}
+
+	cfg := &process.ProcessConfig{
+		Cmd:  "/bin/bash",
+		Args: []string{"-i", "-l"},
+		Envs: envs,
+	}
+	if s.cwd != "" {
+		cfg.Cwd = &s.cwd
+	}
+
+	stream, err := s.pc.StartPTY(ctx, cfg, cols, rows)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = stream.Close() }()
 
+	var pid atomic.Uint32
+
 	// Output pump: render remote PTY output until the process ends.
 	go func() {
-		for {
-			ev, err := stream.Next()
-			if err != nil {
-				if err != io.EOF {
-					errCh <- err
-				}
-				cancel()
-				return
+		for stream.Receive() {
+			ev := stream.Msg().GetEvent()
+			if ev == nil {
+				continue
 			}
-			if ev.Data != nil {
+			switch e := ev.GetEvent().(type) {
+			case *process.ProcessEvent_Start:
+				pid.Store(e.Start.GetPid())
+			case *process.ProcessEvent_Data:
 				s.sawOutput.Store(true)
-				if _, werr := s.out.Write(ev.Data); werr != nil {
-					errCh <- werr
-					cancel()
-					return
+				data := e.Data.GetPty()
+				if len(data) == 0 {
+					data = e.Data.GetStdout()
 				}
-			}
-			if ev.End != nil {
-				endCh <- ev.End
+				if len(data) == 0 {
+					data = e.Data.GetStderr()
+				}
+				if len(data) > 0 {
+					if _, werr := s.out.Write(data); werr != nil {
+						errCh <- werr
+						cancel()
+						return
+					}
+				}
+			case *process.ProcessEvent_End:
+				endCh <- e.End
 				cancel()
 				return
 			}
 		}
+		if err := stream.Err(); err != nil {
+			errCh <- err
+		}
+		cancel()
 	}()
 
-	// Input pump: forward keystrokes to the remote PTY.
+	// Input pump: forward keystrokes to the remote PTY once the PID is known.
 	go func() {
+		for pid.Load() == 0 {
+			if ctx.Err() != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		buf := make([]byte, 512)
 		for {
 			n, err := s.in.Read(buf)
 			if n > 0 {
-				if serr := s.ec.SendInput(ctx, pid, buf[:n]); serr != nil {
+				if serr := s.pc.SendPtyInput(ctx, pid.Load(), buf[:n]); serr != nil {
 					errCh <- serr
 					cancel()
 					return
@@ -146,7 +179,31 @@ func (s *Session) runOnce(ctx context.Context, cols, rows int) (*envd.EndEvent, 
 	}()
 
 	// Resize poller: Windows has no SIGWINCH, so poll the console size.
-	go s.pollResize(ctx, pid, cols, rows)
+	go func() {
+		for pid.Load() == 0 {
+			if ctx.Err() != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		lastCols, lastRows := cols, rows
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				w, h, err := term.GetSize(int(s.out.Fd()))
+				if err == nil && w > 0 && h > 0 && (w != lastCols || h != lastRows) {
+					lastCols, lastRows = w, h
+					if uerr := s.pc.UpdateSize(ctx, pid.Load(), w, h); uerr != nil {
+						return
+					}
+				}
+			}
+		}
+	}()
 
 	<-ctx.Done()
 	// Small grace period so pending remote output is flushed before the
@@ -160,26 +217,5 @@ func (s *Session) runOnce(ctx context.Context, cols, rows int) (*envd.EndEvent, 
 		return end, nil
 	default:
 		return nil, nil
-	}
-}
-
-// pollResize forwards local terminal size changes to the remote PTY.
-func (s *Session) pollResize(ctx context.Context, pid uint32, cols, rows int) {
-	lastCols, lastRows := cols, rows
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			w, h, err := term.GetSize(int(s.out.Fd()))
-			if err == nil && w > 0 && h > 0 && (w != lastCols || h != lastRows) {
-				lastCols, lastRows = w, h
-				if uerr := s.ec.UpdateSize(ctx, pid, w, h); uerr != nil {
-					return
-				}
-			}
-		}
 	}
 }

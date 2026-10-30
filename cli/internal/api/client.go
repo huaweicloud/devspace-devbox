@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -536,64 +537,27 @@ func NewListSandboxesRequest(server string, params *ListSandboxesParams) (*http.
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
-		if params.Metadata != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "metadata", *params.Metadata, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
+		for _, qp := range []struct {
+			name    string
+			value   any
+			typ     string
+			explode bool
+		}{
+			{"metadata", params.Metadata, "string", true},
+			{"state", params.State, "array", false},
+			{"template", params.Template, "string", true},
+			{"nextToken", params.NextToken, "string", true},
+			{"limit", params.Limit, "integer", true},
+		} {
+			// typed nil pointer 装进 interface 后 != nil，需按 Kind 判空。
+			if v := reflect.ValueOf(qp.value); v.Kind() == reflect.Pointer && v.IsNil() {
+				continue
 			}
-
-		}
-
-		if params.State != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+			queryFrag, err := runtime.StyleParamWithOptions("form", qp.explode, qp.name, qp.value, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: qp.typ, Format: ""})
+			if err != nil {
 				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
 			}
-
-		}
-
-		if params.Template != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "template", *params.Template, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.NextToken != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "nextToken", *params.NextToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
+			rawQueryFragments = append(rawQueryFragments, strings.Split(queryFrag, "&")...)
 		}
 
 		if encoded := queryValues.Encode(); encoded != "" {

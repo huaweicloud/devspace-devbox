@@ -27,8 +27,6 @@ const (
 	headerAPIKey = "X-API-Key"
 	// HeaderNextToken is returned by list endpoints for pagination.
 	HeaderNextToken = "X-Next-Token"
-	// HeaderTotalRunning is returned by the sandbox list v2 endpoint.
-	HeaderTotalRunning = "X-Total-Running"
 )
 
 // Client talks to the DevBox Sandbox Manager API.
@@ -38,11 +36,10 @@ type Client struct {
 }
 
 // APIError is an error returned by the DevBox API. It exposes the HTTP status
-// code and the machine-readable error code from the OpenAPI Error schema so
-// callers can branch on the failure cause (e.g. 401 == bad API key).
+// code and the human-readable message so callers can branch on the failure
+// cause (e.g. 401 == bad API key).
 type APIError struct {
 	StatusCode int
-	Code       string
 	Message    string
 }
 
@@ -103,7 +100,6 @@ func checkStatus(resp *http.Response, body []byte) error {
 	var e api.Error
 	if err := json.Unmarshal(body, &e); err == nil && e.Message != "" {
 		apiErr.Message = e.Message
-		apiErr.Code = e.Error
 		return apiErr
 	}
 	// Non-JSON or unexpected body: echo a trimmed excerpt for debuggability.
@@ -113,13 +109,4 @@ func checkStatus(resp *http.Response, body []byte) error {
 	}
 	apiErr.Message = i18n.T(i18n.Msg.Client.ErrorResponsePrefix) + msg
 	return apiErr
-}
-
-// headerInt parses an optional integer response header, defaulting to 0.
-func headerInt(resp *http.Response, name string) int64 {
-	n := int64(0)
-	if resp != nil {
-		_, _ = fmt.Sscanf(resp.Header.Get(name), "%d", &n)
-	}
-	return n
 }

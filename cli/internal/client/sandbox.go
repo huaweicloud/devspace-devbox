@@ -8,9 +8,8 @@ import (
 
 // SandboxListResult carries the sandbox list with pagination meta.
 type SandboxListResult struct {
-	Sandboxes    []api.Sandbox
-	NextToken    string
-	TotalRunning int64
+	Sandboxes []api.Sandbox
+	NextToken string
 }
 
 // ListSandboxes returns all sandboxes, optionally filtered/paginated.
@@ -23,9 +22,8 @@ func (c *Client) ListSandboxes(ctx context.Context, params *api.ListSandboxesPar
 		return nil, err
 	}
 	return &SandboxListResult{
-		Sandboxes:    *resp.JSON200,
-		NextToken:    resp.HTTPResponse.Header.Get(HeaderNextToken),
-		TotalRunning: headerInt(resp.HTTPResponse, HeaderTotalRunning),
+		Sandboxes: *resp.JSON200,
+		NextToken: resp.HTTPResponse.Header.Get(HeaderNextToken),
 	}, nil
 }
 

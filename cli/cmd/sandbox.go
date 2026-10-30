@@ -16,7 +16,6 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/api/processgen/process"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/client"
-	"github.com/huaweicloud/devspace-devbox/cli/internal/envd"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/parse"
@@ -58,6 +57,44 @@ func validateTemplateID(s string) error {
 			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidTemplateID), s)
 		}
 	}
+	return nil
+}
+
+// parseStates parses the repeatable --state values and validates them.
+func parseStates(values []string) ([]api.SandboxState, error) {
+	states := make([]api.SandboxState, 0, len(values))
+	for _, s := range values {
+		st := api.SandboxState(s)
+		if !st.Valid() {
+			return nil, fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidState), s)
+		}
+		states = append(states, st)
+	}
+	return states, nil
+}
+
+// runTerminalSession validates the connection info from the sandbox response
+// and opens the interactive terminal, printing the connecting/closing notices.
+func runTerminalSession(cmd *cobra.Command, sb *api.Sandbox, cwd string, envs map[string]string) error {
+	if sb.Domain == nil || *sb.Domain == "" {
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingDomain))
+	}
+	if sb.ConnectToken == nil || *sb.ConnectToken == "" {
+		return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
+	}
+	pc, err := client.NewProcessClient(*sb.Domain, sb.SandboxID, *sb.ConnectToken, nil)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
+	end, err := term.New(pc, os.Stdin, os.Stdout, cwd, envs).Run(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if end != nil && end.ExitCode != 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.RemoteShellExited)+"\n", end.ExitCode, end.Status)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ClosingConnection)+"\n", sb.SandboxID)
 	return nil
 }
 
@@ -140,26 +177,7 @@ var sandboxCreateCmd = &cobra.Command{
 		}
 
 		// Default: open the interactive terminal.
-		if sb.Domain == nil || *sb.Domain == "" {
-			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingDomain))
-		}
-		if sb.ConnectToken == nil || *sb.ConnectToken == "" {
-			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
-		}
-		ec, err := envd.New(*sb.Domain, sb.SandboxID, *sb.ConnectToken, nil)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
-		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxCreateCwd, envMap).Run(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if end != nil && end.ExitCode != 0 {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.RemoteShellExited)+"\n", end.ExitCode, end.Status)
-		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ClosingConnection)+"\n", sb.SandboxID)
-		return nil
+		return runTerminalSession(cmd, sb, sandboxCreateCwd, envMap)
 	}),
 }
 
@@ -188,13 +206,9 @@ var sandboxListCmd = &cobra.Command{
 			Template: api.OptString(sandboxListTemplate),
 		}
 		if cmd.Flags().Changed("state") {
-			states := make([]api.SandboxState, 0, len(sandboxListStates))
-			for _, s := range sandboxListStates {
-				st := api.SandboxState(s)
-				if !st.Valid() {
-					return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidState), s)
-				}
-				states = append(states, st)
+			states, err := parseStates(sandboxListStates)
+			if err != nil {
+				return err
 			}
 			params.State = &states
 		}
@@ -303,14 +317,11 @@ var sandboxKillCmd = &cobra.Command{
 			// List by state/metadata then kill each; the state defaults to running.
 			states := []api.SandboxState{api.Running}
 			if cmd.Flags().Changed("state") {
-				states = states[:0]
-				for _, s := range sandboxKillState {
-					st := api.SandboxState(s)
-					if !st.Valid() {
-						return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidState), s)
-					}
-					states = append(states, st)
+				parsed, err := parseStates(sandboxKillState)
+				if err != nil {
+					return err
 				}
+				states = parsed
 			}
 			params := &api.ListSandboxesParams{
 				State:    &states,
@@ -447,24 +458,11 @@ var sandboxConnectCmd = &cobra.Command{
 		if sb.ConnectToken == nil || *sb.ConnectToken == "" {
 			return fmt.Errorf("%s", i18n.T(i18n.Msg.Sandbox.MissingConnectToken))
 		}
-		ec, err := envd.New(*sb.Domain, sb.SandboxID, *sb.ConnectToken, nil)
-		if err != nil {
-			return err
-		}
 		envMap, err := parse.ParseKV(sandboxConnectEnv)
 		if err != nil {
 			return fmt.Errorf(i18n.T(i18n.Msg.Sandbox.InvalidEnv), err)
 		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ConnectingTo)+"\n", sb.SandboxID)
-		end, err := term.New(ec, os.Stdin, os.Stdout, sandboxConnectCwd, envMap).Run(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if end != nil && end.ExitCode != 0 {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.RemoteShellExited)+"\n", end.ExitCode, end.Status)
-		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.ClosingConnection)+"\n", sb.SandboxID)
-		return nil
+		return runTerminalSession(cmd, sb, sandboxConnectCwd, envMap)
 	}),
 }
 

@@ -13,7 +13,7 @@ import (
 func TestCallbackDebugLogging(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
-	session, err := StartLogin("https://login.example.com/auth")
+	session, err := StartLogin("https://devstation.connect.huaweicloud.com")
 	if err != nil {
 		t.Fatalf("start login: %v", err)
 	}

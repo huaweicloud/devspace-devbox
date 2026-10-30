@@ -11,8 +11,7 @@
 //  3. the config file ($XDG_CONFIG_HOME/devbox/config.json or
 //     $HOME/.devbox/config.json)
 //
-// Resolution is backed by github.com/spf13/viper, the de-facto configuration
-// library in the cobra ecosystem. Persistence uses encoding/json on the
+// Persistence uses encoding/json on the
 // config file so that only user-set values are written.
 package config
 
@@ -24,8 +23,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/spf13/viper"
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
@@ -61,61 +58,6 @@ const (
 
 	configFileName = "config.json"
 )
-
-// New returns a viper instance resolving flags-independent values: env vars
-// and the config file. Load the config file with [Resolve].
-func New() (*viper.Viper, error) {
-	v := viper.New()
-	v.SetConfigName(strings.TrimSuffix(configFileName, filepath.Ext(configFileName)))
-	v.SetConfigType("json")
-
-	dir, err := ConfigDir()
-	if err != nil {
-		return nil, err
-	}
-	v.AddConfigPath(dir)
-
-	if err := v.BindEnv(KeyAPIKey, EnvAPIKey); err != nil {
-		return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.BindEnvFailed), KeyAPIKey, err)
-	}
-
-	v.SetDefault(KeyAPIKey, "")
-
-	if err := v.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
-			return nil, fmt.Errorf(i18n.T(i18n.Msg.Config.ReadConfigFileFailed), err)
-		}
-	}
-	return v, nil
-}
-
-// Resolved is the effective configuration for one invocation.
-type Resolved struct {
-	APIKey string
-}
-
-// Resolve overlays the resolved configuration with the command-line flag
-// value when provided.
-func (r *Resolved) Resolve(flagAPIKey string) {
-	if flagAPIKey != "" {
-		r.APIKey = flagAPIKey
-	}
-}
-
-// Load reads the effective configuration, applying env + file + defaults and
-// then the given flag override.
-func Load(flagAPIKey string) (*Resolved, error) {
-	v, err := New()
-	if err != nil {
-		return nil, err
-	}
-	r := &Resolved{
-		APIKey: v.GetString(KeyAPIKey),
-	}
-	r.Resolve(flagAPIKey)
-	return r, nil
-}
 
 // Path returns the absolute path of the config file (for display).
 func Path() (string, error) {
@@ -239,9 +181,4 @@ func jsonKey(k string) string {
 		return `""`
 	}
 	return string(data)
-}
-
-// AllowedKeys returns the keys accepted by `devbox config set <key>`.
-func AllowedKeys() []string {
-	return []string{KeyAPIKey}
 }

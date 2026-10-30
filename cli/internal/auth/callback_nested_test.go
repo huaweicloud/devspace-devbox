@@ -10,7 +10,7 @@ import (
 
 // The devstation login page nests the payload under "result".
 func TestStartLoginWithNestedResult(t *testing.T) {
-	session, err := StartLogin("https://login.example.com/auth")
+	session, err := StartLogin("https://devstation.connect.huaweicloud.com")
 	if err != nil {
 		t.Fatalf("start login: %v", err)
 	}

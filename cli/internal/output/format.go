@@ -5,7 +5,6 @@ package output
 
 import (
 	"encoding/json"
-	"strconv"
 	"time"
 )
 
@@ -24,11 +23,6 @@ func FormatTimePtr(t *time.Time) string {
 		return "-"
 	}
 	return FormatTime(*t)
-}
-
-// Itoa renders an int value as a string.
-func Itoa(v int32) string {
-	return strconv.Itoa(int(v))
 }
 
 // JoinList joins string items with ", ".

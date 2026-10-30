@@ -7,7 +7,6 @@ type Messages struct {
 	Sandbox  SandboxMessages
 	Template TemplateMessages
 	Client   ClientMessages
-	EnvD     EnvDMessages
 	Parse    ParseMessages
 	Config   ConfigMessages
 	Output   OutputMessages
@@ -131,33 +130,6 @@ type ClientMessages struct {
 	StoreCredentialFailed  Message
 	LoadCredentialFailed   Message
 	NoCredential           Message
-}
-
-type EnvDMessages struct {
-	EmptyDomain          Message
-	EmptyConnectToken    Message
-	InvalidDomain        Message
-	InvalidDomainScheme  Message
-	InvalidDomainHost    Message
-	EncodeStartBody      Message
-	ReadStartEvent       Message
-	ExpectedStartEvent   Message
-	StreamEndedMidFrame  Message
-	InvalidStreamFrame   Message
-	ReadFramePayload     Message
-	UnexpectedFrameFlags Message
-	DecodeFrame          Message
-	RPCError             Message
-	DecodeTrailer        Message
-	StreamError          Message
-	BuildRequest         Message
-	OpenStream           Message
-	StreamHTTPError      Message
-	StreamContentType    Message
-	EncodeBody           Message
-	CallFailed           Message
-	UnaryHTTPError       Message
-	UnaryError           Message
 }
 
 type ParseMessages struct {
