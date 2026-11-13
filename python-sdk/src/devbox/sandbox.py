@@ -1,0 +1,964 @@
+from __future__ import annotations
+
+import re
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
+from types import TracebackType
+from typing import Any, Literal
+from urllib.parse import quote
+
+import httpx
+
+from ._transport import AsyncTransport, SyncTransport
+from .commands import AsyncCommands, Commands
+from .config import ConnectionConfig, gateway_verify_tls
+from .envd import AsyncEnvd, Envd
+from .errors import ConflictError, DevBoxError, NotFoundError, ProtocolError
+from .filesystem import AsyncFilesystem, Filesystem
+from .git import AsyncGit, Git
+from .models import (
+    Page,
+    SandboxConnection,
+    SandboxInfo,
+    SandboxLifecycle,
+    SandboxState,
+)
+from .pty import AsyncPty, Pty
+
+_TOKEN_REFRESH_WINDOW_SECONDS = 300
+_CONNECT_TOKEN_REFRESHED_HEADER = "X-Devbox-Connect-Token-Refreshed"
+_CONNECT_TOKEN_EXPIRATION_HEADER = "X-Devbox-Connect-Token-Expiration"
+
+
+class Sandboxes:
+    """Sandbox lifecycle operations bound to a reusable client."""
+
+    def __init__(
+        self,
+        transport: SyncTransport,
+        request_timeout: float = 30.0,
+        *,
+        gateway_url: str | None = None,
+    ) -> None:
+        self._transport = transport
+        self._request_timeout = request_timeout
+        self._gateway_url = gateway_url
+
+    def create(
+        self,
+        template: str = "default",
+        *,
+        timeout: int = 300,
+        envs: Mapping[str, str] | None = None,
+        metadata: Mapping[str, str] | None = None,
+        build_id: str | None = None,
+        lifecycle: SandboxLifecycle | None = None,
+        network: Mapping[str, bool] | None = None,
+    ) -> Sandbox:
+        payload = self._transport.request(
+            "POST",
+            "/sandboxes",
+            json_body=_create_body(
+                template,
+                timeout,
+                envs,
+                metadata,
+                build_id,
+                lifecycle,
+                network,
+            ),
+        )
+        info, connection = _sandbox_payload(payload)
+        return Sandbox(
+            self._transport,
+            info,
+            connection,
+            request_timeout=self._request_timeout,
+            gateway_url=self._gateway_url,
+        )
+
+    def connect(self, sandbox_id: str, *, timeout: int = 300) -> Sandbox:
+        """Fetch Gateway credentials, resuming a paused sandbox when needed."""
+        payload = self._transport.request(
+            "POST",
+            f"/sandboxes/{_id(sandbox_id)}/connect",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        return Sandbox(
+            self._transport,
+            info,
+            connection,
+            request_timeout=self._request_timeout,
+            gateway_url=self._gateway_url,
+        )
+
+    def get(self, sandbox_id: str) -> SandboxInfo:
+        return SandboxInfo.from_wire(
+            _mapping(self._transport.request("GET", f"/sandboxes/{_id(sandbox_id)}"))
+        )
+
+    def list(
+        self,
+        *,
+        template: str | None = None,
+        metadata: str | None = None,
+        states: Sequence[SandboxState | str] = (),
+        limit: int | None = None,
+        next_token: str | None = None,
+        started_after: str | None = None,
+        order: Literal["asc", "desc"] | None = None,
+    ) -> Page[SandboxInfo]:
+        payload, headers = self._transport.request_with_headers(
+            "GET",
+            "/sandboxes",
+            params=_list_params(
+                metadata, states, limit, next_token, template, started_after, order
+            ),
+        )
+        return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
+
+
+class AsyncSandboxes:
+    """Asynchronous sandbox lifecycle operations bound to a reusable client."""
+
+    def __init__(
+        self,
+        transport: AsyncTransport,
+        request_timeout: float = 30.0,
+        *,
+        gateway_url: str | None = None,
+    ) -> None:
+        self._transport = transport
+        self._request_timeout = request_timeout
+        self._gateway_url = gateway_url
+
+    async def create(
+        self,
+        template: str = "default",
+        *,
+        timeout: int = 300,
+        envs: Mapping[str, str] | None = None,
+        metadata: Mapping[str, str] | None = None,
+        build_id: str | None = None,
+        lifecycle: SandboxLifecycle | None = None,
+        network: Mapping[str, bool] | None = None,
+    ) -> AsyncSandbox:
+        payload = await self._transport.request(
+            "POST",
+            "/sandboxes",
+            json_body=_create_body(
+                template,
+                timeout,
+                envs,
+                metadata,
+                build_id,
+                lifecycle,
+                network,
+            ),
+        )
+        info, connection = _sandbox_payload(payload)
+        return AsyncSandbox(
+            self._transport,
+            info,
+            connection,
+            request_timeout=self._request_timeout,
+            gateway_url=self._gateway_url,
+        )
+
+    async def connect(self, sandbox_id: str, *, timeout: int = 300) -> AsyncSandbox:
+        payload = await self._transport.request(
+            "POST",
+            f"/sandboxes/{_id(sandbox_id)}/connect",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        return AsyncSandbox(
+            self._transport,
+            info,
+            connection,
+            request_timeout=self._request_timeout,
+            gateway_url=self._gateway_url,
+        )
+
+    async def get(self, sandbox_id: str) -> SandboxInfo:
+        return SandboxInfo.from_wire(
+            _mapping(await self._transport.request("GET", f"/sandboxes/{_id(sandbox_id)}"))
+        )
+
+    async def list(
+        self,
+        *,
+        template: str | None = None,
+        metadata: str | None = None,
+        states: Sequence[SandboxState | str] = (),
+        limit: int | None = None,
+        next_token: str | None = None,
+        started_after: str | None = None,
+        order: Literal["asc", "desc"] | None = None,
+    ) -> Page[SandboxInfo]:
+        payload, headers = await self._transport.request_with_headers(
+            "GET",
+            "/sandboxes",
+            params=_list_params(
+                metadata, states, limit, next_token, template, started_after, order
+            ),
+        )
+        return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
+
+
+class Sandbox:
+    """The main synchronous entry point for one remote sandbox.
+
+    Runtime work is grouped by purpose: ``commands`` runs processes, ``files``
+    manages files, ``pty`` opens interactive terminals, and ``git`` performs
+    common repository operations.
+
+    Exiting its context manager deletes the remote sandbox. Call ``close()``
+    directly when only local connections should be released.
+    """
+
+    commands: Commands
+    files: Filesystem
+    pty: Pty
+    git: Git
+    envd: Envd
+
+    def __init__(
+        self,
+        control: SyncTransport,
+        info: SandboxInfo,
+        connection: SandboxConnection,
+        *,
+        owns_control: bool = False,
+        request_timeout: float = 30.0,
+        gateway_url: str | None = None,
+    ) -> None:
+        self._control = control
+        self._info = info
+        self._connection = connection
+        self._owns_control = owns_control
+        self._request_timeout = request_timeout
+        self._gateway_url_override = gateway_url
+        self._gateway: SyncTransport | None = None
+        self.commands = Commands(self._gateway_transport)
+        self.files = Filesystem(self._gateway_transport)
+        self.pty = Pty(self.commands, self._gateway_transport)
+        self.git = Git(self.commands)
+        self.envd = Envd(self._gateway_transport)
+
+    @classmethod
+    def create(
+        cls,
+        template: str = "default",
+        *,
+        timeout: int = 300,
+        envs: Mapping[str, str] | None = None,
+        metadata: Mapping[str, str] | None = None,
+        build_id: str | None = None,
+        lifecycle: SandboxLifecycle | None = None,
+        network: Mapping[str, bool] | None = None,
+        api_key: str | None = None,
+        api_url: str | None = None,
+        gateway_url: str | None = None,
+        request_timeout: float | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Sandbox:
+        """Create a sandbox and connect its runtime APIs."""
+        config, transport = _sync_control(
+            api_key,
+            api_url,
+            gateway_url,
+            request_timeout,
+            headers,
+        )
+        try:
+            sandbox = Sandboxes(
+                transport,
+                config.request_timeout,
+                gateway_url=config.gateway_url,
+            ).create(
+                template,
+                timeout=timeout,
+                envs=envs,
+                metadata=metadata,
+                build_id=build_id,
+                lifecycle=lifecycle,
+                network=network,
+            )
+        except BaseException:
+            transport.close()
+            raise
+        sandbox._owns_control = True
+        return sandbox
+
+    @classmethod
+    def connect(
+        cls,
+        sandbox_id: str,
+        *,
+        timeout: int = 300,
+        api_key: str | None = None,
+        api_url: str | None = None,
+        gateway_url: str | None = None,
+        request_timeout: float | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Sandbox:
+        """Fetch Gateway credentials; this does not itself open a data connection."""
+        config, transport = _sync_control(
+            api_key,
+            api_url,
+            gateway_url,
+            request_timeout,
+            headers,
+        )
+        try:
+            sandbox = Sandboxes(
+                transport,
+                config.request_timeout,
+                gateway_url=config.gateway_url,
+            ).connect(sandbox_id, timeout=timeout)
+        except BaseException:
+            transport.close()
+            raise
+        sandbox._owns_control = True
+        return sandbox
+
+    @property
+    def sandbox_id(self) -> str:
+        return self._info.sandbox_id
+
+    @property
+    def info(self) -> SandboxInfo:
+        return self._info
+
+    def get_info(self) -> SandboxInfo:
+        """Fetch the latest sandbox state from the Manager."""
+        self._info = SandboxInfo.from_wire(
+            _mapping(self._control.request("GET", f"/sandboxes/{_id(self.sandbox_id)}"))
+        )
+        return self._info
+
+    def is_running(self) -> bool:
+        """Return whether the Manager reports the sandbox as running."""
+        try:
+            return self.get_info().state is SandboxState.RUNNING
+        except NotFoundError:
+            self._info = replace(self._info, state=SandboxState.STOPPED)
+            return False
+
+    def set_timeout(self, timeout: int) -> None:
+        """Set the remaining sandbox lifetime in seconds."""
+        self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/timeout",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+
+    def refresh(self, duration: int = 300) -> None:
+        """Extend expiration to at least now plus duration; never shorten it."""
+        self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
+            json_body={"duration": _checked_timeout(duration)},
+        )
+
+    def pause(
+        self, *, memory: bool | None = None, mode: Literal["full", "filesystem"] | None = None
+    ) -> None:
+        """Save memory and disk, then close local runtime connections.
+
+        Manager does not expire paused sandbox records. Context manager exit
+        still deletes it; use ``close()`` to leave it available for resume.
+        """
+        self._control.request(
+            "POST", f"/sandboxes/{_id(self.sandbox_id)}/pause", json_body=_pause_body(memory, mode)
+        )
+        self._info = replace(self._info, state=SandboxState.PAUSED)
+        self._close_gateway()
+
+    def resume(self, *, timeout: int = 300) -> Sandbox:
+        """Resume a paused sandbox and replace this handle's previous connect token."""
+        payload = self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/resume",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        self._close_gateway()
+        self._info, self._connection = info, connection
+        return self
+
+    def kill(self) -> bool:
+        """Delete the sandbox, returning whether it still existed."""
+        try:
+            self._control.request("DELETE", f"/sandboxes/{_id(self.sandbox_id)}")
+        except (NotFoundError, ConflictError) as error:
+            if isinstance(error, ConflictError) and error.code != "already_killed":
+                raise
+            self._info = replace(self._info, state=SandboxState.STOPPED)
+            return False
+        finally:
+            self._close_gateway()
+        self._info = replace(self._info, state=SandboxState.STOPPED)
+        return True
+
+    def close(self) -> None:
+        """Close local connections without deleting the remote sandbox."""
+        self._close_gateway()
+        if self._owns_control:
+            self._control.close()
+
+    def __enter__(self) -> Sandbox:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        try:
+            self.kill()
+        except DevBoxError:
+            if exc_type is None:
+                raise
+        finally:
+            self.close()
+
+    def _gateway_transport(self) -> SyncTransport:
+        if self._info.state is SandboxState.PAUSED and not (
+            self._info.lifecycle and self._info.lifecycle.auto_resume
+        ):
+            raise ConflictError("sandbox is paused; call resume() or Sandbox.connect() first")
+        self._refresh_connection_if_needed()
+        if self._gateway is None:
+            self._gateway = SyncTransport(
+                _gateway_url(self._connection, self._gateway_url_override),
+                headers=_gateway_headers(self._connection),
+                timeout=self._request_timeout,
+                verify=gateway_verify_tls(),
+                response_hook=self._handle_refreshed_connect_token,
+            )
+        return self._gateway
+
+    def _refresh_connection_if_needed(self) -> None:
+        if not _token_needs_refresh(self._connection):
+            return
+        old_url = _gateway_url(self._connection, self._gateway_url_override)
+        payload = self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/connect",
+            json_body={"resume": bool(self._info.lifecycle and self._info.lifecycle.auto_resume)},
+        )
+        info, connection = _sandbox_payload(payload)
+        self._info, self._connection = info, connection
+        if self._gateway is not None:
+            if old_url == _gateway_url(connection, self._gateway_url_override):
+                self._gateway.update_headers(_gateway_headers(connection))
+            else:
+                self._close_gateway()
+
+    def _handle_refreshed_connect_token(self, response: httpx.Response) -> None:
+        token = response.headers.get(_CONNECT_TOKEN_REFRESHED_HEADER)
+        if not token:
+            return
+        expiration = response.headers.get(_CONNECT_TOKEN_EXPIRATION_HEADER)
+        if expiration is None:
+            raise ProtocolError("gateway refreshed token without an expiration")
+        try:
+            token_expiration = int(expiration)
+        except ValueError as error:
+            raise ProtocolError("gateway refreshed token expiration is not an integer") from error
+        if token_expiration <= 0:
+            raise ProtocolError("gateway refreshed token expiration must be positive")
+        self._connection = replace(
+            self._connection,
+            connect_token=token,
+            token_expiration=token_expiration,
+        )
+        if self._gateway is not None:
+            self._gateway.update_headers(_gateway_headers(self._connection))
+
+    def _close_gateway(self) -> None:
+        if self._gateway is not None:
+            self._gateway.close()
+            self._gateway = None
+
+
+class AsyncSandbox:
+    """Asynchronous counterpart of :class:`Sandbox` with automatic cleanup."""
+
+    commands: AsyncCommands
+    files: AsyncFilesystem
+    pty: AsyncPty
+    git: AsyncGit
+    envd: AsyncEnvd
+
+    def __init__(
+        self,
+        control: AsyncTransport,
+        info: SandboxInfo,
+        connection: SandboxConnection,
+        *,
+        owns_control: bool = False,
+        request_timeout: float = 30.0,
+        gateway_url: str | None = None,
+    ) -> None:
+        self._control = control
+        self._info = info
+        self._connection = connection
+        self._owns_control = owns_control
+        self._request_timeout = request_timeout
+        self._gateway_url_override = gateway_url
+        self._gateway: AsyncTransport | None = None
+        self.commands = AsyncCommands(self._gateway_transport)
+        self.files = AsyncFilesystem(self._gateway_transport)
+        self.pty = AsyncPty(self.commands, self._gateway_transport)
+        self.git = AsyncGit(self.commands)
+        self.envd = AsyncEnvd(self._gateway_transport)
+
+    @classmethod
+    async def create(
+        cls,
+        template: str = "default",
+        *,
+        timeout: int = 300,
+        envs: Mapping[str, str] | None = None,
+        metadata: Mapping[str, str] | None = None,
+        build_id: str | None = None,
+        lifecycle: SandboxLifecycle | None = None,
+        network: Mapping[str, bool] | None = None,
+        api_key: str | None = None,
+        api_url: str | None = None,
+        gateway_url: str | None = None,
+        request_timeout: float | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> AsyncSandbox:
+        """Create a sandbox and connect its runtime APIs."""
+        config, transport = _async_control(
+            api_key,
+            api_url,
+            gateway_url,
+            request_timeout,
+            headers,
+        )
+        try:
+            sandbox = await AsyncSandboxes(
+                transport,
+                config.request_timeout,
+                gateway_url=config.gateway_url,
+            ).create(
+                template,
+                timeout=timeout,
+                envs=envs,
+                metadata=metadata,
+                build_id=build_id,
+                lifecycle=lifecycle,
+                network=network,
+            )
+        except BaseException:
+            await transport.close()
+            raise
+        sandbox._owns_control = True
+        return sandbox
+
+    @classmethod
+    async def connect(
+        cls,
+        sandbox_id: str,
+        *,
+        timeout: int = 300,
+        api_key: str | None = None,
+        api_url: str | None = None,
+        gateway_url: str | None = None,
+        request_timeout: float | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> AsyncSandbox:
+        """Fetch Gateway credentials; this does not itself open a data connection."""
+        config, transport = _async_control(
+            api_key,
+            api_url,
+            gateway_url,
+            request_timeout,
+            headers,
+        )
+        try:
+            sandbox = await AsyncSandboxes(
+                transport,
+                config.request_timeout,
+                gateway_url=config.gateway_url,
+            ).connect(sandbox_id, timeout=timeout)
+        except BaseException:
+            await transport.close()
+            raise
+        sandbox._owns_control = True
+        return sandbox
+
+    @property
+    def sandbox_id(self) -> str:
+        return self._info.sandbox_id
+
+    @property
+    def info(self) -> SandboxInfo:
+        return self._info
+
+    async def get_info(self) -> SandboxInfo:
+        self._info = SandboxInfo.from_wire(
+            _mapping(await self._control.request("GET", f"/sandboxes/{_id(self.sandbox_id)}"))
+        )
+        return self._info
+
+    async def is_running(self) -> bool:
+        """Return whether the Manager reports the sandbox as running."""
+        try:
+            return (await self.get_info()).state is SandboxState.RUNNING
+        except NotFoundError:
+            self._info = replace(self._info, state=SandboxState.STOPPED)
+            return False
+
+    async def set_timeout(self, timeout: int) -> None:
+        await self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/timeout",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+
+    async def refresh(self, duration: int = 300) -> None:
+        """Extend expiration to at least now plus duration; never shorten it."""
+        await self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/refreshes",
+            json_body={"duration": _checked_timeout(duration)},
+        )
+
+    async def pause(
+        self, *, memory: bool | None = None, mode: Literal["full", "filesystem"] | None = None
+    ) -> None:
+        """Save memory and disk; context manager exit still deletes the sandbox."""
+        await self._control.request(
+            "POST", f"/sandboxes/{_id(self.sandbox_id)}/pause", json_body=_pause_body(memory, mode)
+        )
+        self._info = replace(self._info, state=SandboxState.PAUSED)
+        await self._close_gateway()
+
+    async def resume(self, *, timeout: int = 300) -> AsyncSandbox:
+        """Resume a paused sandbox and replace this handle's previous connect token."""
+        payload = await self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/resume",
+            json_body={"timeout": _checked_timeout(timeout)},
+        )
+        info, connection = _sandbox_payload(payload)
+        await self._close_gateway()
+        self._info, self._connection = info, connection
+        return self
+
+    async def kill(self) -> bool:
+        """Delete the sandbox, returning whether it still existed."""
+        try:
+            await self._control.request("DELETE", f"/sandboxes/{_id(self.sandbox_id)}")
+        except (NotFoundError, ConflictError) as error:
+            if isinstance(error, ConflictError) and error.code != "already_killed":
+                raise
+            self._info = replace(self._info, state=SandboxState.STOPPED)
+            return False
+        finally:
+            await self._close_gateway()
+        self._info = replace(self._info, state=SandboxState.STOPPED)
+        return True
+
+    async def close(self) -> None:
+        """Close local connections without deleting the remote sandbox."""
+        await self._close_gateway()
+        if self._owns_control:
+            await self._control.close()
+
+    async def __aenter__(self) -> AsyncSandbox:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        try:
+            await self.kill()
+        except DevBoxError:
+            if exc_type is None:
+                raise
+        finally:
+            await self.close()
+
+    async def _gateway_transport(self) -> AsyncTransport:
+        if self._info.state is SandboxState.PAUSED and not (
+            self._info.lifecycle and self._info.lifecycle.auto_resume
+        ):
+            raise ConflictError("sandbox is paused; call resume() or AsyncSandbox.connect() first")
+        await self._refresh_connection_if_needed()
+        if self._gateway is None:
+            self._gateway = AsyncTransport(
+                _gateway_url(self._connection, self._gateway_url_override),
+                headers=_gateway_headers(self._connection),
+                timeout=self._request_timeout,
+                verify=gateway_verify_tls(),
+                response_hook=self._handle_refreshed_connect_token,
+            )
+        return self._gateway
+
+    async def _refresh_connection_if_needed(self) -> None:
+        if not _token_needs_refresh(self._connection):
+            return
+        old_url = _gateway_url(self._connection, self._gateway_url_override)
+        payload = await self._control.request(
+            "POST",
+            f"/sandboxes/{_id(self.sandbox_id)}/connect",
+            json_body={"resume": bool(self._info.lifecycle and self._info.lifecycle.auto_resume)},
+        )
+        info, connection = _sandbox_payload(payload)
+        self._info, self._connection = info, connection
+        if self._gateway is not None:
+            if old_url == _gateway_url(connection, self._gateway_url_override):
+                self._gateway.update_headers(_gateway_headers(connection))
+            else:
+                await self._close_gateway()
+
+    def _handle_refreshed_connect_token(self, response: httpx.Response) -> None:
+        token = response.headers.get(_CONNECT_TOKEN_REFRESHED_HEADER)
+        if not token:
+            return
+        expiration = response.headers.get(_CONNECT_TOKEN_EXPIRATION_HEADER)
+        if expiration is None:
+            raise ProtocolError("gateway refreshed token without an expiration")
+        try:
+            token_expiration = int(expiration)
+        except ValueError as error:
+            raise ProtocolError("gateway refreshed token expiration is not an integer") from error
+        if token_expiration <= 0:
+            raise ProtocolError("gateway refreshed token expiration must be positive")
+        self._connection = replace(
+            self._connection,
+            connect_token=token,
+            token_expiration=token_expiration,
+        )
+        if self._gateway is not None:
+            self._gateway.update_headers(_gateway_headers(self._connection))
+
+    async def _close_gateway(self) -> None:
+        if self._gateway is not None:
+            await self._gateway.close()
+            self._gateway = None
+
+
+def _sync_control(
+    api_key: str | None,
+    api_url: str | None,
+    gateway_url: str | None,
+    request_timeout: float | None,
+    headers: Mapping[str, str] | None,
+) -> tuple[ConnectionConfig, SyncTransport]:
+    config = ConnectionConfig.resolve(
+        api_key=api_key,
+        api_url=api_url,
+        gateway_url=gateway_url,
+        request_timeout=request_timeout,
+        headers=headers,
+    )
+    return config, SyncTransport(
+        config.api_url,
+        headers={**config.headers, "X-API-Key": config.api_key},
+        timeout=config.control_timeout,
+    )
+
+
+def _async_control(
+    api_key: str | None,
+    api_url: str | None,
+    gateway_url: str | None,
+    request_timeout: float | None,
+    headers: Mapping[str, str] | None,
+) -> tuple[ConnectionConfig, AsyncTransport]:
+    config = ConnectionConfig.resolve(
+        api_key=api_key,
+        api_url=api_url,
+        gateway_url=gateway_url,
+        request_timeout=request_timeout,
+        headers=headers,
+    )
+    return config, AsyncTransport(
+        config.api_url,
+        headers={**config.headers, "X-API-Key": config.api_key},
+        timeout=config.control_timeout,
+    )
+
+
+def _create_body(
+    template: str,
+    timeout: int,
+    envs: Mapping[str, str] | None,
+    metadata: Mapping[str, str] | None,
+    build_id: str | None,
+    lifecycle: SandboxLifecycle | None,
+    network: Mapping[str, bool] | None = None,
+) -> dict[str, object]:
+    if not template.strip():
+        raise ValueError("template must not be blank")
+    body: dict[str, object] = {
+        "templateID": template,
+        "timeout": _checked_timeout(timeout),
+        "metadata": dict(metadata or {}),
+        "envVars": dict(envs or {}),
+    }
+    if build_id:
+        body["buildID"] = build_id
+    if lifecycle is not None:
+        if lifecycle.on_timeout not in {"kill", "pause"}:
+            raise ValueError("lifecycle.on_timeout must be 'kill' or 'pause'")
+        if lifecycle.auto_resume and lifecycle.on_timeout != "pause":
+            raise ValueError("lifecycle.auto_resume requires on_timeout='pause'")
+        body["autoPause"] = lifecycle.on_timeout == "pause"
+        body["autoResume"] = {"enabled": lifecycle.auto_resume}
+        body["lifecycle"] = {
+            "onTimeout": lifecycle.on_timeout,
+            "autoResume": lifecycle.auto_resume,
+        }
+    if network is not None:
+        if not isinstance(network, Mapping) or set(network) - {"allow_public_traffic"}:
+            raise ValueError("network only supports allow_public_traffic")
+        if "allow_public_traffic" in network and not isinstance(
+            network["allow_public_traffic"], bool
+        ):
+            raise ValueError("network.allow_public_traffic must be a boolean")
+        body["network"] = (
+            {"allowPublicTraffic": network["allow_public_traffic"]}
+            if "allow_public_traffic" in network
+            else {}
+        )
+    return body
+
+
+def _pause_body(memory: bool | None, mode: str | None) -> dict[str, bool] | None:
+    if memory is False or mode == "filesystem":
+        raise ValueError("Only full memory snapshots are supported")
+    if memory is not None and not isinstance(memory, bool):
+        raise ValueError("memory must be a boolean")
+    if mode is not None and mode != "full":
+        raise ValueError("mode must be full")
+    return {"memory": True} if memory is not None or mode is not None else None
+
+
+def _sandbox_payload(value: object) -> tuple[SandboxInfo, SandboxConnection]:
+    payload = _mapping(value)
+    info = SandboxInfo.from_wire(payload)
+    return info, SandboxConnection.from_wire(payload, info.sandbox_id)
+
+
+def _sandbox_page(value: object, next_token: str | None, total: str | None) -> Page[SandboxInfo]:
+    return Page(
+        tuple(SandboxInfo.from_wire(item) for item in _items(value)),
+        next_token or None,
+        _response_integer(total, "X-Total-Running") if total else None,
+    )
+
+
+def _list_params(
+    metadata: str | None,
+    states: Sequence[SandboxState | str],
+    limit: int | None,
+    next_token: str | None,
+    template: str | None = None,
+    started_after: str | None = None,
+    order: Literal["asc", "desc"] | None = None,
+) -> dict[str, str | int]:
+    params: dict[str, str | int] = {}
+    if template:
+        params["template"] = template
+    if metadata:
+        params["metadata"] = metadata
+    if states:
+        params["state"] = ",".join(
+            item.value if isinstance(item, SandboxState) else item for item in states
+        )
+    if limit is not None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 0 <= limit <= 1000:
+            raise ValueError("limit must be an integer between 0 and 1000 (0 means no limit)")
+        params["limit"] = limit
+    if next_token:
+        params["nextToken"] = next_token
+    if started_after:
+        params["startedAfter"] = started_after
+    if order is not None:
+        if order not in ("asc", "desc"):
+            raise ValueError("order must be asc or desc")
+        params["order"] = order
+    return params
+
+
+def _items(value: object) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, list | tuple):
+        raise ProtocolError("DevBox returned an invalid list response")
+    return tuple(_mapping(item) for item in value)
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ProtocolError("DevBox returned an invalid object response")
+    return value
+
+
+def _checked_timeout(timeout: int) -> int:
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
+        raise ValueError("timeout must be an integer between 1 and 86400 seconds")
+    return timeout
+
+
+def _response_integer(value: str, field: str) -> int:
+    try:
+        return int(value)
+    except ValueError as error:
+        raise ProtocolError(f"DevBox response header is not an integer: {field}") from error
+
+
+def _id(value: str) -> str:
+    if not value:
+        raise ValueError("identifier must not be blank")
+    return quote(value, safe="")
+
+
+def _gateway_headers(connection: SandboxConnection) -> dict[str, str]:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", connection.connect_token):
+        raise ProtocolError("sandbox response does not provide a valid connectToken")
+    headers = {
+        "Cookie": f"relay_token={connection.connect_token}",
+        "E2B-Sandbox-Id": connection.sandbox_id,
+        "E2B-Sandbox-Port": "49983",
+    }
+    if connection.envd_access_token:
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", connection.envd_access_token):
+            raise ProtocolError("sandbox response does not provide a valid envdAccessToken")
+        headers["X-Access-Token"] = connection.envd_access_token
+    return headers
+
+
+def _token_needs_refresh(connection: SandboxConnection) -> bool:
+    return (
+        connection.token_expiration is not None
+        and connection.token_expiration <= int(time.time()) + _TOKEN_REFRESH_WINDOW_SECONDS
+    )
+
+
+def _gateway_url(connection: SandboxConnection, configured_url: str | None = None) -> str:
+    if configured_url:
+        if "{tunnel_id}" in configured_url and not connection.tunnel_id:
+            raise ProtocolError("sandbox response does not provide a tunnel ID")
+        return configured_url.replace("{tunnel_id}", connection.tunnel_id).replace(
+            "{port}", "49983"
+        )
+    url = connection.domain
+    if not url:
+        raise ProtocolError("sandbox response does not provide an EnvD endpoint")
+    if url.removeprefix("https://").endswith(".sandbox.devbox.local"):
+        raise ProtocolError("Manager returned a placeholder EnvD endpoint")
+    return url

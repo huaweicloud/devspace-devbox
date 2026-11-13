@@ -1,0 +1,624 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Callable
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+
+from devbox import (
+    AsyncDevBox,
+    AsyncSandbox,
+    ConfigurationError,
+    ConflictError,
+    DevBox,
+    ProtocolError,
+    RateLimitError,
+    SandboxLifecycle,
+    SandboxState,
+)
+from devbox.config import ConnectionConfig
+from devbox.models import SandboxConnection
+from devbox.sandbox import _checked_timeout, _gateway_headers, _gateway_url
+
+
+def test_pause_resume_replaces_runtime_credentials() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(204)
+        if request.url.path.endswith("/resume"):
+            assert json.loads(request.content) == {"timeout": 600}
+            return httpx.Response(201, json={**response, "connectToken": "new-token"})
+        return httpx.Response(201, json=response)
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            sandbox.pause()
+            assert gateway._client.is_closed
+            assert sandbox.info.state.value == "paused"
+            with pytest.raises(ConflictError, match="resume"):
+                sandbox.files.read("/tmp/proof")
+            assert sandbox.resume(timeout=600) is sandbox
+            assert sandbox.info.state is SandboxState.RUNNING
+            assert sandbox._gateway_transport()._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_pause_resume_replaces_runtime_credentials() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(204)
+        if request.url.path.endswith("/resume"):
+            assert json.loads(request.content) == {"timeout": 600}
+            return httpx.Response(201, json={**response, "connectToken": "new-token"})
+        return httpx.Response(201, json=response)
+
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        http_transport=httpx.MockTransport(handler),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            await sandbox.pause()
+            assert gateway._client.is_closed
+            assert sandbox.info.state.value == "paused"
+            with pytest.raises(ConflictError, match="resume"):
+                await sandbox.files.read("/tmp/proof")
+            assert await sandbox.resume(timeout=600) is sandbox
+            assert sandbox.info.state is SandboxState.RUNNING
+            new_gateway = await sandbox._gateway_transport()
+            assert new_gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            await sandbox.close()
+
+
+def test_failed_pause_does_not_close_runtime() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(409, json={"code": "invalid_status", "message": "Busy"})
+        return httpx.Response(
+            201, json={**connection_response(), "domain": "https://runtime.example.test"}
+        )
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            with pytest.raises(ConflictError):
+                sandbox.pause()
+            assert sandbox.info.state is SandboxState.RUNNING
+            assert not gateway._client.is_closed
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["create", "connect"])
+async def test_cancelled_sandbox_open_closes_client(operation: str) -> None:
+    transport = AsyncMock()
+    config = ConnectionConfig.resolve(api_key="test")
+    with (
+        patch("devbox.sandbox._async_control", return_value=(config, transport)),
+        patch(f"devbox.sandbox.AsyncSandboxes.{operation}", side_effect=asyncio.CancelledError),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await getattr(AsyncSandbox, operation)("test", api_key="test")
+    transport.close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("token", ["", "bad; other=value", "bad\r\nX-Test: value", "bad\n"])
+def test_gateway_rejects_missing_or_unsafe_connect_token(token: str) -> None:
+    connection = SandboxConnection.from_wire(
+        {"connectToken": token, "envdAccessToken": "obsolete-token"}, "sbx_123"
+    )
+    with pytest.raises(ProtocolError, match="valid connectToken"):
+        _gateway_headers(connection)
+
+
+def test_gateway_uses_relay_cookie_for_all_runtime_requests() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+    with client(lambda _: httpx.Response(201, json=response)) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            for path in ("/files", "/process.Process/Start", "/filesystem.Filesystem/WatchDir"):
+                request = gateway._client.build_request("POST", path)
+                assert request.headers["Cookie"] == "relay_token=connect-token"
+                assert request.headers["E2B-Sandbox-Id"] == "sbx_123"
+                assert "X-Access-Token" not in request.headers
+                assert "X-API-Key" not in request.headers
+            assert "Cookie" not in api._transport._client.headers
+        finally:
+            sandbox.close()
+
+
+def test_gateway_refreshes_expiring_connect_token() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        response = {
+            **connection_response(),
+            "domain": "https://runtime.example.test",
+            "connectToken": "old-token",
+            "tokenExpiration": 1,
+        }
+        if request.url.path.endswith("/connect"):
+            assert json.loads(request.content) == {"resume": False}
+            response.update(connectToken="new-token", tokenExpiration=4_000_000_000)
+            return httpx.Response(200, json=response)
+        return httpx.Response(201, json=response)
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            assert requests == ["/sandboxes", "/sandboxes/sbx_123/connect"]
+            assert gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            sandbox.close()
+
+
+def test_gateway_response_refreshes_connect_token() -> None:
+    response = {**connection_response(), "domain": "https://runtime.example.test"}
+
+    with client(lambda _: httpx.Response(201, json=response)) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            gateway = sandbox._gateway_transport()
+            sandbox._handle_refreshed_connect_token(
+                httpx.Response(
+                    200,
+                    headers={
+                        "X-Devbox-Connect-Token-Refreshed": "new-token",
+                        "X-Devbox-Connect-Token-Expiration": "4000000000",
+                    },
+                )
+            )
+            assert sandbox._connection.connect_token == "new-token"
+            assert sandbox._connection.token_expiration == 4_000_000_000
+            assert gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_gateway_refreshes_expiring_connect_token() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        response = {
+            **connection_response("sbx_async"),
+            "domain": "https://runtime.example.test",
+            "connectToken": "old-token",
+            "tokenExpiration": 1,
+        }
+        if request.url.path.endswith("/connect"):
+            response.update(connectToken="new-token", tokenExpiration=4_000_000_000)
+            return httpx.Response(200, json=response)
+        return httpx.Response(201, json=response)
+
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        http_transport=httpx.MockTransport(handler),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            assert requests == ["/sandboxes", "/sandboxes/sbx_async/connect"]
+            assert gateway._client.headers["Cookie"] == "relay_token=new-token"
+        finally:
+            await sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_gateway_uses_relay_cookie() -> None:
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        gateway_url="https://runtime.example.test",
+        http_transport=httpx.MockTransport(
+            lambda _: httpx.Response(201, json=connection_response())
+        ),
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            gateway = await sandbox._gateway_transport()
+            request = gateway._client.build_request("POST", "/process.Process/Start")
+            assert request.headers["Cookie"] == "relay_token=connect-token"
+            assert "X-Access-Token" not in request.headers
+            assert "X-API-Key" not in request.headers
+        finally:
+            await sandbox.close()
+
+
+def test_create_uses_manager_contract() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create(
+            "python",
+            timeout=300,
+            envs={"A": "1"},
+            metadata={"job": "test"},
+        )
+
+    body = json.loads(captured[0].content)
+    assert captured[0].url.path == "/sandboxes"
+    assert captured[0].headers["X-API-Key"] == "secret"
+    assert body["templateID"] == "python"
+    assert body["envVars"] == {"A": "1"}
+    assert "autoPause" not in body
+    assert "autoResume" not in body
+    assert "network" not in body
+    assert "allow_internet_access" not in body
+    assert sandbox.sandbox_id == "sbx_123"
+    assert sandbox._connection.tunnel_id == "aaaadysa"
+    assert sandbox._connection.connect_token == "connect-token"
+    assert sandbox._connection.token_expiration == 4000000000
+    assert "connect-token" not in repr(sandbox._connection)
+
+
+@pytest.mark.parametrize("public", [True, False])
+def test_create_network_and_full_pause(public: bool) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if request.url.path.endswith("/pause"):
+            assert body == {"memory": True}
+            return httpx.Response(204)
+        assert body["network"] == {"allowPublicTraffic": public}
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create(network={"allow_public_traffic": public})
+        sandbox.pause(mode="full")
+        with pytest.raises(ValueError, match="full memory"):
+            sandbox.pause(memory=False)
+
+
+def test_create_serializes_auto_resume_lifecycle() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            201,
+            json={
+                **connection_response(),
+                "domain": "https://runtime.example.test",
+                "state": "paused",
+                "lifecycle": {"onTimeout": "pause", "autoResume": True},
+            },
+        )
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create(
+            lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True)
+        )
+        body = json.loads(captured[0].content)
+        assert body["lifecycle"] == {"onTimeout": "pause", "autoResume": True}
+        assert sandbox._gateway_transport() is not None
+        sandbox.close()
+
+
+def test_create_serializes_kill_lifecycle_without_pause_options() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        api.sandboxes.create(lifecycle=SandboxLifecycle(on_timeout="kill"))
+
+    body = json.loads(captured[0].content)
+    assert body["lifecycle"] == {"onTimeout": "kill", "autoResume": False}
+
+
+def test_auto_resume_requires_pause_lifecycle() -> None:
+    with (
+        client(lambda _: pytest.fail("request should not be sent")) as api,
+        pytest.raises(ValueError, match="requires"),
+    ):
+        api.sandboxes.create(lifecycle=SandboxLifecycle(on_timeout="kill", auto_resume=True))
+
+
+def test_missing_token_expiration_is_not_inferred_from_tunnel_expiration() -> None:
+    connection = SandboxConnection.from_wire({"tunnelExpiration": 1788946515}, "sbx_123")
+    assert connection.connect_token == ""
+    assert connection.token_expiration is None
+
+
+def test_connect_reads_latest_manager_connection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sandboxes/sbx_123/connect"
+        assert json.loads(request.content) == {"timeout": 300}
+        return httpx.Response(200, json=connection_response())
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.connect("sbx_123")
+        assert sandbox._connection.connect_token == "connect-token"
+        assert sandbox._connection.token_expiration == 4000000000
+        sandbox.close()
+
+
+@pytest.mark.parametrize("code", ["already_killed", "another_conflict"])
+def test_kill_handles_only_already_killed_conflict(code: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(409, json={"error": code, "message": "conflict"})
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        if code == "already_killed":
+            assert sandbox.kill() is False
+            assert sandbox.info.state is SandboxState.STOPPED
+        else:
+            with pytest.raises(ConflictError):
+                sandbox.kill()
+
+
+@pytest.mark.asyncio
+async def test_async_kill_handles_expired_sandbox() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(409, json={"error": "already_killed", "message": "already killed"})
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        assert await sandbox.kill() is False
+        assert sandbox.info.state is SandboxState.STOPPED
+
+
+def test_list_reads_pagination_headers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sandboxes"
+        assert request.url.params["state"] == "running,paused"
+        return httpx.Response(
+            200,
+            json=[detail_response()],
+            headers={"X-Next-Token": "next", "X-Total-Running": "7"},
+        )
+
+    with client(handler) as api:
+        page = api.sandboxes.list(states=[SandboxState.RUNNING, SandboxState.PAUSED], limit=10)
+
+    assert page.next_token == "next"
+    assert page.total == 7
+    assert page.items[0].sandbox_id == "sbx_123"
+
+
+def test_lifecycle_uses_documented_paths_and_bodies() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        if request.url.path == "/sandboxes":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(204)
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        sandbox.refresh(120)
+
+    assert [item.url.path for item in captured] == [
+        "/sandboxes",
+        "/sandboxes/sbx_123/refreshes",
+    ]
+    assert json.loads(captured[1].content) == {"duration": 120}
+
+
+def test_lifecycle_timeout_supports_24_hours() -> None:
+    assert _checked_timeout(1) == 1
+    assert _checked_timeout(9) == 9
+    assert _checked_timeout(7200) == 7200
+    assert _checked_timeout(86400) == 86400
+    for invalid in (-1, 0, 86401, 90000, True):
+        with pytest.raises(ValueError, match="86400"):
+            _checked_timeout(invalid)
+
+
+def test_error_shape_preserves_message_and_code() -> None:
+    with (
+        client(
+            lambda request: httpx.Response(
+                429, json={"error": "rate_limited", "message": "too many requests"}
+            )
+        ) as api,
+        pytest.raises(RateLimitError) as raised,
+    ):
+        api.sandboxes.get("sbx_123")
+    assert raised.value.code == "rate_limited"
+    assert raised.value.message == "too many requests"
+
+
+@pytest.mark.asyncio
+async def test_async_client_uses_same_contract() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["X-API-Key"] == "secret"
+        return httpx.Response(201, json=connection_response("sbx_async"))
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.create()
+    assert sandbox.sandbox_id == "sbx_async"
+    assert sandbox._connection.connect_token == "connect-token"
+    assert sandbox._connection.token_expiration == 4000000000
+
+
+@pytest.mark.asyncio
+async def test_async_connect_reads_latest_manager_connection() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sandboxes/sbx_async/connect"
+        return httpx.Response(200, json=connection_response("sbx_async"))
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.connect("sbx_async")
+        assert sandbox._connection.connect_token == "connect-token"
+        assert sandbox._connection.token_expiration == 4000000000
+        await sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_sandbox_context_deletes_remote_sandbox() -> None:
+    methods: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response("sbx_async"))
+        return httpx.Response(204)
+
+    async with AsyncDevBox(
+        api_key="secret",
+        api_url="https://api.test",
+        http_transport=httpx.MockTransport(handler),
+    ) as api:
+        async with await api.sandboxes.create() as sandbox:
+            assert sandbox.sandbox_id == "sbx_async"
+        assert sandbox.info.state is SandboxState.STOPPED
+
+    assert methods == ["POST", "DELETE"]
+
+
+def test_invalid_pagination_header_is_a_protocol_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[], headers={"X-Total-Running": "invalid"})
+
+    with client(handler) as api, pytest.raises(ProtocolError, match="X-Total-Running"):
+        api.sandboxes.list()
+
+
+def test_https_gateway_url_can_override_manager_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "DEVBOX_GATEWAY_URL",
+        "https://{tunnel_id}-{port}.gateway.example.test/",
+    )
+    config = ConnectionConfig.resolve(api_key="secret")
+    connection = SandboxConnection(
+        sandbox_id="sbx_123",
+        domain="https://sbx_123.sandbox.devbox.local",
+        connect_token="token",
+        tunnel_id="aaaadysa",
+    )
+
+    assert (
+        _gateway_url(connection, config.gateway_url)
+        == "https://aaaadysa-49983.gateway.example.test"
+    )
+
+
+def test_gateway_url_override_requires_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEVBOX_GATEWAY_URL", "http://gateway.example.test")
+
+    with pytest.raises(ConfigurationError, match="must use https"):
+        ConnectionConfig.resolve(api_key="secret")
+
+
+def test_sandbox_context_deletes_remote_sandbox() -> None:
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(204)
+
+    with client(handler) as api:
+        with api.sandboxes.create() as sandbox:
+            assert sandbox.sandbox_id == "sbx_123"
+        assert sandbox.info.state is SandboxState.STOPPED
+
+    assert methods == ["POST", "DELETE"]
+
+
+def test_kill_is_idempotent() -> None:
+    delete_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal delete_count
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        delete_count += 1
+        if delete_count == 1:
+            return httpx.Response(204)
+        return httpx.Response(404, json={"code": "not_found", "message": "not found"})
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        assert sandbox.kill() is True
+        assert sandbox.kill() is False
+
+
+def test_is_running_returns_false_when_sandbox_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(201, json=connection_response())
+        return httpx.Response(404, json={"code": "not_found", "message": "not found"})
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        assert sandbox.is_running() is False
+
+
+def client(handler: Callable[[httpx.Request], httpx.Response]) -> DevBox:
+    return DevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    )
+
+
+def connection_response(sandbox_id: str = "sbx_123") -> dict[str, object]:
+    return {
+        "templateID": "base",
+        "sandboxID": sandbox_id,
+        "clientID": "client_1",
+        "envdVersion": "1.0.0",
+        "domain": "sbx_123.sandbox.devbox.local",
+        "sandboxProxyDomain": "devbox.example.test",
+        "trafficAccessToken": "traffic-token",
+        "tunnelId": "aaaadysa",
+        "connectToken": "connect-token",
+        "tokenLifetime": 86400,
+        "tokenExpiration": 4000000000,
+        "tunnelLifetime": 86400,
+        "tunnelExpiration": 1788946515,
+    }
+
+
+def detail_response() -> dict[str, object]:
+    return {
+        **connection_response(),
+        "startedAt": "2026-09-02T00:00:00Z",
+        "endAt": "2026-09-02T00:05:00Z",
+        "cpuCount": 2,
+        "memoryMB": 512,
+        "diskSizeMB": 10240,
+        "state": "running",
+    }
