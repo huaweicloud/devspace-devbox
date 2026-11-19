@@ -1,0 +1,20 @@
+# Build artifacts
+bin/
+/distbox
+dist/
+dist-extra/
+*.exe
+
+# Editor
+.idea/
+.vscode/
+
+# AI
+.claude/
+.cursor/
+.aider*
+.windsurf/
+
+# Env
+.env
+*.log

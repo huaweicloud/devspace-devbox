@@ -1,0 +1,63 @@
+package client
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
+)
+
+const (
+	// DefaultCheckPath is the API key validation endpoint path on the bridge
+	// domain ({DefaultServer}/v1/api-keys/check).
+	DefaultCheckPath = "/v1/api-keys/check"
+)
+
+// checkHTTPClient is used for key verification. It is intentionally separate
+// from the main API client so verification stays fast and independent.
+var checkHTTPClient = &http.Client{
+	Timeout:   10 * time.Second,
+	Transport: &loggingTransport{base: http.DefaultTransport},
+}
+
+// VerifyAPIKey validates apiKey against the api-keys check endpoint
+// ({server}/v1/api-keys/check). It returns nil when the key is valid (HTTP
+// 200/204), ErrUnauthorized when the key is rejected (HTTP 401), and a wrapped
+// error otherwise.
+func VerifyAPIKey(ctx context.Context, server, apiKey string) error {
+	if apiKey == "" {
+		return ErrUnauthorized
+	}
+
+	url := strings.TrimRight(server, "/") + DefaultCheckPath
+
+	// The check endpoint is POST (no GET route), with an empty JSON body.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
+	if err != nil {
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.BuildVerifyRequest), err)
+	}
+	req.Header.Set(headerAPIKey, apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := checkHTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.VerifyFailed), err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusNoContent:
+		return nil
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusUpgradeRequired:
+		return &UpgradeRequiredError{}
+	default:
+		return fmt.Errorf(i18n.T(i18n.Msg.Client.VerifyUnexpectedStatus), resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+}
