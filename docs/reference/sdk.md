@@ -57,12 +57,16 @@ const page = await client.sandboxes.list({ template: "default", limit: 1000 });
 | `build_id` / `buildId` | 固定模板构建版本 |
 | `envs` | 沙箱环境变量，字符串键值 |
 | `metadata` | 沙箱业务标签，字符串键值 |
+| `idempotency_key` / `idempotencyKey` | 可选，重试同一次创建时复用原 key 和参数。SDK 不自动生成 key |
+| `volume_mounts` / `volumeMounts` | 预留给存储卷挂载，按挂载路径映射到卷名。当前 DevBox 服务对带卷请求返回 501 |
 | `lifecycle` | 到期销毁或暂停，是否允许自动恢复 |
 | `network` | Python `{"allow_public_traffic": false}` / JS `{ allowPublicTraffic: false }`，要求应用端口访问携带[连接凭证](../api/sandboxes.md#application-port)；省略时允许匿名访问应用端口 |
 
 沙箱存活时间支持 1～86400 秒。`lifecycle.on_timeout` / `onTimeout` 为 `"kill"` 或 `"pause"`；`auto_resume` / `autoResume` 仅在到期暂停时启用。运行中的 `connect(timeout=...)` 只延长、不缩短期限；恢复时从恢复成功开始计算新期限。
 
 示例与行为说明见[快速入门](../index.md#创建并使用沙箱)和[生命周期](../guide/lifecycle.md)。
+
+Python 同步和异步入口都接受 `idempotency_key`，例如 `Sandbox.create("default", idempotency_key="job-123")`。JavaScript 使用 `await Sandbox.create("default", { idempotencyKey: "job-123" })`。详见[安全重试创建](../api/sandboxes.md#idempotency)。
 
 完整快照暂停支持 Python `sandbox.pause(mode="full")`、`sandbox.pause(memory=True)`，JS `sandbox.pause({ mode: "full" })`、`sandbox.pause({ memory: true })`；与无参数暂停等价。`memory=false`、`mode="filesystem"` 明确报错。
 

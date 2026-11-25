@@ -44,6 +44,19 @@ curl --fail-with-body "$DEVBOX_API_URL/sandboxes" \
 
 成功返回 HTTP 201 和[沙箱对象](#sandbox)。保存 `sandboxID`。沙箱内请求使用响应中的 `envdUrl` 和 `connectToken`。
 
+### 安全重试创建 {#idempotency}
+
+为同一次创建生成一个 `Idempotency-Key`，例如小写 UUID。请求超时或连接断开后，用原 key 和原参数重试。key 按账户与 Namespace 隔离，支持 1–255 个小写字母、数字或连字符。原生和 E2B 创建路径使用同一套去重规则。
+
+| 重试结果 | 含义 |
+| --- | --- |
+| `201` | 24 小时内回放原始创建结果，不创建新沙箱或延长原期限 |
+| `409 idempotency_in_progress` | 首次创建仍在进行。等 `Retry-After` 后用原 key 重试 |
+| `409 idempotency_request_mismatch` | 该 key 已用于不同参数 |
+| `422 idempotency_outcome_unknown` | 服务没能确认原请求结果。先按 metadata 查询沙箱列表，再决定是否发起新创建 |
+
+回放的凭证和截止时间仍是原始值。如需使用仍然存活的沙箱，调用 connect 获取当前凭证。
+
 模板或指定 Build 不可用时返回 404；资源或依赖暂不可用时可返回 503；请求或资源配额耗尽时返回 429。出现 `tunnel_quota_exceeded` 时，需释放账户下闲置沙箱或隧道。
 
 ## 列出沙箱 {#list}
@@ -276,6 +289,8 @@ const appUrl = `https://${sandbox.getHost(8080)}`;
 
 这两个方法属于 E2B SDK，不是 DevBox SDK 的原生方法。执行命令时省略 `user` 会使用沙箱默认用户。
 
-仅支持完整内存快照。其他非 null 网络字段（例如 `dnsServers`、`httpsPorts`）或 `allow_internet_access:false` 返回 400 `network_policy_unsupported`。创建时非 null 的 `cpuCount`、`volumeMounts`、`iam`、`mcp` 或非空 `Idempotency-Key` 返回 400 `unsupported_create_option`；CPU 规格由模板决定，不支持创建幂等。
+仅支持完整内存快照。其他非 null 网络字段（例如 `dnsServers`、`httpsPorts`）或 `allow_internet_access:false` 返回 400 `network_policy_unsupported`。创建时非 null 的 `cpuCount`、`iam`、`mcp` 返回 400 `unsupported_create_option`。CPU 规格由模板决定。
+
+创建请求的 `volumeMounts` 使用 E2B 格式，例如 `[{"name":"my-volume","path":"/mnt/data"}]`。带卷创建当前返回 `501 volumes_not_available`。省略字段或传空数组时按普通沙箱创建处理。
 
 恢复请求也接受 `autoPause`；省略时保留原生命周期策略。DevBox 的 `limit=0` 表示不分页；不支持 E2B 的冷恢复、fork、历史指标、沙箱日志或动态网络更新接口。

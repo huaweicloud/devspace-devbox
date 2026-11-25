@@ -12,7 +12,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import quote
 
 import httpx
@@ -36,6 +36,11 @@ from .pty import AsyncPty, Pty
 _TOKEN_REFRESH_WINDOW_SECONDS = 300
 _CONNECT_TOKEN_REFRESHED_HEADER = "X-Devbox-Connect-Token-Refreshed"
 _CONNECT_TOKEN_EXPIRATION_HEADER = "X-Devbox-Connect-Token-Expiration"
+
+
+class VolumeReference(Protocol):
+    @property
+    def name(self) -> str: ...
 
 
 class Sandboxes:
@@ -62,6 +67,8 @@ class Sandboxes:
         build_id: str | None = None,
         lifecycle: SandboxLifecycle | None = None,
         network: Mapping[str, bool] | None = None,
+        idempotency_key: str | None = None,
+        volume_mounts: Mapping[str, str | VolumeReference] | None = None,
     ) -> Sandbox:
         """Create a sandbox from a template and return its handle.
 
@@ -70,6 +77,7 @@ class Sandboxes:
         payload = self._transport.request(
             "POST",
             "/sandboxes",
+            headers=_create_headers(idempotency_key),
             json_body=_create_body(
                 template,
                 timeout,
@@ -78,6 +86,7 @@ class Sandboxes:
                 build_id,
                 lifecycle,
                 network,
+                volume_mounts,
             ),
         )
         info, connection = _sandbox_payload(payload)
@@ -157,6 +166,8 @@ class AsyncSandboxes:
         build_id: str | None = None,
         lifecycle: SandboxLifecycle | None = None,
         network: Mapping[str, bool] | None = None,
+        idempotency_key: str | None = None,
+        volume_mounts: Mapping[str, str | VolumeReference] | None = None,
     ) -> AsyncSandbox:
         """Create a sandbox from a template and return its handle.
 
@@ -165,6 +176,7 @@ class AsyncSandboxes:
         payload = await self._transport.request(
             "POST",
             "/sandboxes",
+            headers=_create_headers(idempotency_key),
             json_body=_create_body(
                 template,
                 timeout,
@@ -173,6 +185,7 @@ class AsyncSandboxes:
                 build_id,
                 lifecycle,
                 network,
+                volume_mounts,
             ),
         )
         info, connection = _sandbox_payload(payload)
@@ -279,6 +292,8 @@ class Sandbox:
         build_id: str | None = None,
         lifecycle: SandboxLifecycle | None = None,
         network: Mapping[str, bool] | None = None,
+        idempotency_key: str | None = None,
+        volume_mounts: Mapping[str, str | VolumeReference] | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
@@ -306,6 +321,8 @@ class Sandbox:
                 build_id=build_id,
                 lifecycle=lifecycle,
                 network=network,
+                idempotency_key=idempotency_key,
+                volume_mounts=volume_mounts,
             )
         except BaseException:
             transport.close()
@@ -561,6 +578,8 @@ class AsyncSandbox:
         build_id: str | None = None,
         lifecycle: SandboxLifecycle | None = None,
         network: Mapping[str, bool] | None = None,
+        idempotency_key: str | None = None,
+        volume_mounts: Mapping[str, str | VolumeReference] | None = None,
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
@@ -588,6 +607,8 @@ class AsyncSandbox:
                 build_id=build_id,
                 lifecycle=lifecycle,
                 network=network,
+                idempotency_key=idempotency_key,
+                volume_mounts=volume_mounts,
             )
         except BaseException:
             await transport.close()
@@ -838,6 +859,14 @@ def _async_control(
     )
 
 
+def _create_headers(idempotency_key: str | None) -> Mapping[str, str] | None:
+    if idempotency_key is None:
+        return None
+    if not re.fullmatch(r"[a-z0-9-]{1,255}", idempotency_key):
+        raise ValueError("idempotency_key must contain 1-255 lowercase letters, digits, or hyphens")
+    return {"Idempotency-Key": idempotency_key}
+
+
 def _create_body(
     template: str,
     timeout: int,
@@ -846,6 +875,7 @@ def _create_body(
     build_id: str | None,
     lifecycle: SandboxLifecycle | None,
     network: Mapping[str, bool] | None = None,
+    volume_mounts: Mapping[str, str | VolumeReference] | None = None,
 ) -> dict[str, object]:
     if not template.strip():
         raise ValueError("template must not be blank")
@@ -880,6 +910,11 @@ def _create_body(
             if "allow_public_traffic" in network
             else {}
         )
+    if volume_mounts:
+        body["volumeMounts"] = [
+            {"name": volume if isinstance(volume, str) else volume.name, "path": mount_path}
+            for mount_path, volume in volume_mounts.items()
+        ]
     return body
 
 

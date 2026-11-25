@@ -178,6 +178,66 @@ describe("sandboxes", () => {
     }
   });
 
+  it("serializes guest paths and volume names using the E2B format", async () => {
+    agent = mockAgent();
+    agent
+      .get("https://manager.example.test")
+      .intercept({
+        path: "/sandboxes",
+        method: "POST",
+        body: (raw) => {
+          const body = JSON.parse(raw);
+          expect(body.volumeMounts).toEqual([
+            { name: "shared-data", path: "/mnt/data" },
+            { name: "tools", path: "/mnt/tools" },
+          ]);
+          return true;
+        },
+      })
+      .reply(201, sandboxResponse);
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      const sandbox = await client.sandboxes.create("default", {
+        volumeMounts: { "/mnt/data": "shared-data", "/mnt/tools": { name: "tools" } },
+      });
+      await sandbox.close();
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("sends an explicit idempotency key on the create request", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager
+      .intercept({
+        path: "/sandboxes",
+        method: "POST",
+        headers: { "idempotency-key": "job-123" },
+      })
+      .reply(201, sandboxResponse);
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      await expect(
+        client.sandboxes.create("default", { idempotencyKey: "Invalid" }),
+      ).rejects.toThrow(RangeError);
+      const sandbox = await client.sandboxes.create("default", { idempotencyKey: "job-123" });
+      await sandbox.close();
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await client.close();
+    }
+  });
+
   it("updates the connect token from gateway response headers", async () => {
     agent = mockAgent();
     agent

@@ -171,6 +171,37 @@ def test_gateway_refreshes_expiring_connect_token() -> None:
             sandbox.close()
 
 
+def test_create_serializes_volume_mounts() -> None:
+    payloads = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        api.sandboxes.create(volume_mounts={"/mnt/data": "shared-data"})
+        api.sandboxes.create(volume_mounts={})
+
+    assert payloads[0]["volumeMounts"] == [{"name": "shared-data", "path": "/mnt/data"}]
+    assert "volumeMounts" not in payloads[1]
+
+
+def test_create_idempotency_key_is_request_scoped() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        api.sandboxes.create(idempotency_key="job-123")
+        api.sandboxes.create()
+        with pytest.raises(ValueError, match="idempotency_key"):
+            api.sandboxes.create(idempotency_key="Invalid")
+
+    assert [request.headers.get("Idempotency-Key") for request in requests] == ["job-123", None]
+
+
 def test_gateway_response_refreshes_connect_token() -> None:
     response = {
         **connection_response(),

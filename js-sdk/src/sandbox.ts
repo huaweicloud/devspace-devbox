@@ -37,6 +37,10 @@ export interface CreateSandboxOptions {
   buildId?: string;
   lifecycle?: SandboxLifecycle;
   network?: { allowPublicTraffic?: boolean };
+  /** Reuse this key and the same parameters when retrying one creation. */
+  idempotencyKey?: string;
+  /** Map guest mount paths to volume names or objects exposing a volume name. */
+  volumeMounts?: Readonly<Record<string, string | { readonly name: string }>>;
 }
 
 /** Options for {@link Sandboxes.connect}. */
@@ -87,8 +91,18 @@ export class Sandboxes {
    * handle with a live envd connection.
    */
   async create(template = "default", options: CreateSandboxOptions = {}): Promise<Sandbox> {
+    const { idempotencyKey } = options;
+    if (
+      idempotencyKey !== undefined &&
+      (typeof idempotencyKey !== "string" || !/^[a-z0-9-]{1,255}$/.test(idempotencyKey))
+    ) {
+      throw new RangeError(
+        "idempotencyKey must contain 1-255 lowercase letters, digits, or hyphens",
+      );
+    }
     const payload = await this.#transport.request("POST", "/sandboxes", {
       json: createBody(template, options),
+      ...(idempotencyKey === undefined ? {} : { headers: { "Idempotency-Key": idempotencyKey } }),
     });
     const [info, connection] = sandboxPayload(payload);
     return Sandbox.fromConnection(this.#transport, info, connection, this.#context);
@@ -469,6 +483,13 @@ function createBody(template: string, options: CreateSandboxOptions): WireObject
     if (network.allowPublicTraffic !== undefined && typeof network.allowPublicTraffic !== "boolean")
       throw new TypeError("network.allowPublicTraffic must be a boolean");
     body.network = { ...network };
+  }
+  if (options.volumeMounts) {
+    const mounts = Object.entries(options.volumeMounts).map(([path, volume]) => ({
+      name: typeof volume === "string" ? volume : volume.name,
+      path,
+    }));
+    if (mounts.length) body.volumeMounts = mounts;
   }
   return body;
 }
