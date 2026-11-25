@@ -8,24 +8,15 @@ DevBox 提供隔离的云端 Linux 沙箱。通过 Python 或 JavaScript/TypeScr
 
 ## 安装
 
-需要 Python 3.10+，或 Node.js 20.18.1+。从源码安装：
-
-```bash
-git clone --branch dev https://github.com/huaweicloud/devspace-devbox.git
-cd devspace-devbox
-```
+Python 需要 3.10+，安装包发布在 [PyPI](https://pypi.org/project/devbox-sdk/)，在代码中用 `import devbox` 导入。JavaScript / TypeScript 需要 Node.js 20.18.1+，在应用目录从 [npm](https://www.npmjs.com/package/devbox-js-sdk) 安装。
 
 ::: code-group
 ```bash [Python]
-python -m pip install ./python-sdk
+python -m pip install devbox-sdk
 ```
 
 ```bash [JavaScript / TypeScript]
-cd js-sdk
-npm ci
-npm run build
-# 在你的应用目录中安装，路径替换为实际位置：
-npm install /path/to/devspace-devbox/js-sdk
+npm install devbox-js-sdk
 ```
 :::
 

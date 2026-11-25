@@ -19,17 +19,28 @@ Sandbox
 
 ## 安装
 
-发布到包仓库后安装：
+在应用目录从 [npm](https://www.npmjs.com/package/devbox-js-sdk) 安装。
 
 ```bash
 npm install devbox-js-sdk
 ```
 
-从仓库源码安装：
+### 从源码安装
+
+在仓库根目录构建 SDK。
 
 ```bash
-npm install ./js-sdk
+npm --prefix js-sdk ci
+npm --prefix js-sdk run build
 ```
+
+然后在应用目录安装本地包，将路径替换为实际位置。
+
+```bash
+npm install /path/to/devspace-devbox/js-sdk
+```
+
+## 快速开始
 
 设置管理面签发的 API Key：
 
@@ -42,8 +53,6 @@ Windows CMD：
 ```bat
 set "DEVBOX_API_KEY=devbox_xxx"
 ```
-
-## 快速开始
 
 ```js
 import { Sandbox } from "devbox-js-sdk";

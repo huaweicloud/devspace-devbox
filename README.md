@@ -59,10 +59,10 @@ Sandbox
 export DEVBOX_API_KEY=devbox_xxx
 ```
 
-Python（需 3.10+）：
+Python 3.10+，从 [PyPI](https://pypi.org/project/devbox-sdk/) 安装。
 
 ```bash
-python -m pip install ./python-sdk
+python -m pip install devbox-sdk
 ```
 
 ```python
@@ -76,11 +76,10 @@ with Sandbox.create("default", timeout=300) as sandbox:
     print(sandbox.files.read("/tmp/message.txt"))
 ```
 
-JavaScript / TypeScript（需 Node.js 20.18.1+）：
+JavaScript / TypeScript 需要 Node.js 20.18.1+，在应用目录从 [npm](https://www.npmjs.com/package/devbox-js-sdk) 安装。
 
 ```bash
-cd js-sdk && npm ci && npm run build
-npm install /path/to/devspace-devbox/js-sdk
+npm install devbox-js-sdk
 ```
 
 ```javascript

@@ -21,7 +21,15 @@ Sandbox
 
 ## 安装
 
-从项目源码安装时，先在项目目录创建独立虚拟环境。
+从 [PyPI](https://pypi.org/project/devbox-sdk/) 安装。
+
+```bash
+python -m pip install devbox-sdk
+```
+
+### 从源码安装
+
+在仓库的 `python-sdk` 目录创建独立虚拟环境，再安装源码。
 
 Linux 或 macOS：
 
@@ -35,12 +43,6 @@ Windows CMD：
 ```bat
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-```
-
-发布到包仓库后也可以直接安装：
-
-```bash
-python -m pip install devbox-sdk
 ```
 
 ## 快速开始
