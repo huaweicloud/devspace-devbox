@@ -10,6 +10,20 @@
 | --- | --- | ---: | ---: | ---: |
 | `default` | `tpl-devbox-base-test` | 2 | 1 GiB | 10 GiB |
 
+
+### 默认模板的预装组件
+
+| 类别 | 组件与版本 |
+| --- | --- |
+| 操作系统 | openEuler 24.03 LTS（ARM64 / aarch64），Linux 内核 6.6.157 |
+| Python | Python 3.11.6，pip 23.3.1 |
+| JavaScript | Node.js 20.18.0，npm 10.8.2 |
+| 命令行与版本控制 | Bash 5.2.15，Git 2.43.0 |
+| 下载与数据处理 | curl 8.4.0，Wget 1.21.4，jq 1.6，GNU tar 1.35 |
+| 沙箱运行时 | EnvD 0.1.6，提供命令、文件与终端接口 |
+
+上表列出沙箱内的组件。JavaScript SDK 的 Node.js 版本要求适用于运行 SDK 的客户端。组件版本以所选 Build 的实际环境为准。
+
 ## 查询可用模板
 
 新模板上线后会出现在模板列表里。下面的命令和 SDK 示例会查询当前连接环境的可用模板、别名、资源规格和 Build ID。连接生产环境时可用它们确认最新列表。通过 HTTP 接入时使用 [GET /templates](../api/templates.md#list)。
