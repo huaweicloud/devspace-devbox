@@ -1,6 +1,6 @@
-# 使用opencode模板创建沙箱，创作一个个人网站并预览
+# 用 OpenCode 模板创建并预览个人网站
 
-在私有沙箱中运行 OpenCode，用提示词生成一个静态网页，再将生成的 HTML 复制到专门用于匿名预览的 Base 沙箱。
+在私有沙箱中运行 OpenCode，用提示词生成一个静态个人网站，再将生成的 HTML 复制到专门用于匿名预览的 Base 沙箱。
 
 ## 确认模板与凭证
 
@@ -28,10 +28,9 @@ from devbox import Sandbox
 
 model = os.environ["OPENCODE_MODEL"]
 prompt = (
-    "在当前目录创建 index.html，制作一个中文待办清单 Demo。"
-    "支持添加、勾选和删除待办事项。"
-    "把 CSS 和 JavaScript 内嵌在 HTML 中，仅写入 index.html，"
-    "使用 localStorage 保留数据，不引用外部资源。"
+    "在当前目录创建 index.html，制作一个中文个人网站。"
+    "使用虚构姓名及内容，包含个人简介、技能和两个示例项目。"
+    "页面适配手机和桌面，仅写入 index.html，内嵌 CSS，不引用外部资源。"
 )
 
 with Sandbox.create(

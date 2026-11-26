@@ -90,6 +90,6 @@ Python 的 `with Sandbox.create(...)` 会在离开代码块时执行删除。需
 
 ## 最佳实践
 
-- [兼容E2B生态，SDK 和 CLI 接入 DevBox](./best-practices/e2b.md)
-- [用base模板沙箱运行代码并预览分享](./best-practices/base-web-demo.md)
-- [用opencode模板沙箱创作个人网站](./best-practices/opencode-web-demo.md)
+- [用 E2B SDK 和 CLI 接入 DevBox](./best-practices/e2b.md)
+- [用 Base 模板运行并分享 GitHub Demo](./best-practices/base-web-demo.md)
+- [用 OpenCode 模板创建并预览个人网站](./best-practices/opencode-web-demo.md)

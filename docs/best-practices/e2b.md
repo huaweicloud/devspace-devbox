@@ -1,6 +1,6 @@
 # 用 E2B SDK 和 CLI 接入 DevBox
 
-已有 E2B 项目可以保留原来的 SDK 或 CLI，通过 替换DevBox API Key 和管理面地址，创建、执行和删除沙箱。以下示例使用 DevBox 的 Base 模板别名 `default`。
+已有 E2B 项目可以保留原来的 SDK 或 CLI，将凭证和管理面地址切换到 DevBox，即可创建、执行和删除沙箱。以下示例使用 DevBox 的 Base 模板别名 `default`。
 
 ## 配置 DevBox 凭证和地址
 

@@ -1,4 +1,4 @@
-# 使用base模板创建沙箱，clone代码并运行，浏览器访问、匿名分享
+# 用 Base 模板运行并分享 GitHub Demo
 
 在 DevBox 沙箱中克隆 GitHub 的 [Spoon-Knife 示例仓库](https://github.com/octocat/Spoon-Knife)，用 Python 提供静态页面，再把 HTTPS 地址分享给其他人。Base 模板的别名为 `default`，预装了 Git 和 Python。
 

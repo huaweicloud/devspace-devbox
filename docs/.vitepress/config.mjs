@@ -34,8 +34,8 @@ export default defineConfig({
         text: "最佳实践",
         items: [
           { text: "用 E2B SDK 和 CLI 接入 DevBox", link: "/best-practices/e2b" },
-          { text: "用 Base 模板运行并分享 Demo", link: "/best-practices/base-web-demo" },
-          { text: "用 OpenCode 模板生成并分享 Demo", link: "/best-practices/opencode-web-demo" },
+          { text: "用 Base 模板运行并分享 GitHub Demo", link: "/best-practices/base-web-demo" },
+          { text: "用 OpenCode 模板创建并预览个人网站", link: "/best-practices/opencode-web-demo" },
         ],
       },
       {
