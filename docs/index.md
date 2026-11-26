@@ -87,3 +87,9 @@ try {
 Python 的 `with Sandbox.create(...)` 会在离开代码块时执行删除。需要保留沙箱时，手动创建并在使用结束后调用 `close()`。记录沙箱 ID 后，可使用 `Sandbox.connect(id)` 再次访问。
 
 沙箱默认存活 300 秒，到期销毁。更长任务或暂停恢复，请阅读[生命周期](./guide/lifecycle.md)。
+
+## 最佳实践
+
+- [用 E2B SDK 和 CLI 接入 DevBox](./best-practices/e2b.md)
+- [用 Base 模板运行并分享 Demo](./best-practices/base-web-demo.md)
+- [用 OpenCode 模板生成并分享 Demo](./best-practices/opencode-web-demo.md)
