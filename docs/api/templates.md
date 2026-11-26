@@ -20,18 +20,18 @@ curl --fail-with-body "$DEVBOX_API_URL/templates" \
   -H "X-API-Key: $DEVBOX_API_KEY"
 ```
 
-成功返回 HTTP 200，JSON 为数组，空列表为 `[]`：
+成功返回 HTTP 200。响应为 JSON 数组，空列表为 `[]`。以下以生产 `default` 模板为例，构建版本以实际响应为准。
 
 ```json
 [
   {
-    "templateID": "<template-id>",
-    "name": "devbox-base",
+    "templateID": "tpl-devbox-base-test",
+    "name": "devbox-base-test",
     "aliases": ["default"],
     "buildID": "<build-id>",
     "cpuCount": 2,
     "memoryMB": 1024,
-    "diskSizeMB": 2040
+    "diskSizeMB": 10240
   }
 ]
 ```

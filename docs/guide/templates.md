@@ -2,9 +2,23 @@
 
 模板决定沙箱的初始软件环境与资源规格。先查询可用模板，再按模板 ID 或别名创建。
 
+## 生产模板
+
+截至 2026 年 11 月 26 日，生产环境已确认可用的模板如下。
+
+| 别名 | 模板 ID | vCPU | 内存 | 磁盘 |
+| --- | --- | ---: | ---: | ---: |
+| `default` | `tpl-devbox-base-test` | 2 | 1 GiB | 10 GiB |
+
 ## 查询可用模板
 
+新模板上线后会出现在模板列表里。下面的命令和 SDK 示例会查询当前连接环境的可用模板、别名、资源规格和 Build ID。连接生产环境时可用它们确认最新列表。通过 HTTP 接入时使用 [GET /templates](../api/templates.md#list)。
+
 ::: code-group
+```bash [CLI]
+devbox tpl list
+```
+
 ```python [Python]
 from devbox import DevBox
 

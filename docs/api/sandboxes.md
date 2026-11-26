@@ -214,7 +214,7 @@ curl --fail-with-body -X DELETE "$DEVBOX_API_URL/sandboxes/$SANDBOX_ID" \
   "endAt": "2026-10-21T08:05:00Z",
   "cpuCount": 2,
   "memoryMB": 1024,
-  "diskSizeMB": 2040,
+  "diskSizeMB": 10240,
   "metadata": {"project": "example"},
   "lifecycle": {"onTimeout": "pause", "autoResume": true},
   "domain": "https://<沙箱访问域名>",
