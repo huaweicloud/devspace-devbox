@@ -160,6 +160,24 @@ export interface Page<T> {
   total?: number;
 }
 
+/** One historical metrics sample of a sandbox, as reported by the Manager API. */
+export interface SandboxMetrics {
+  timestampUnix: number;
+  cpuCount: number;
+  cpuUsedPct: number;
+  memTotal: number;
+  memUsed: number;
+  memCache: number;
+  diskTotal: number;
+  diskUsed: number;
+  timestamp?: Date;
+  cpuPossible?: number;
+  cpuTarget?: number;
+  cpuTargetAttempts?: number;
+  cpuWritePendingMs?: number;
+  envdVersion?: string;
+}
+
 /**
  * Parses a Manager API sandbox payload into {@link SandboxInfo}; accepts the
  * documented field names and common snake_case variants. Throws
@@ -305,4 +323,27 @@ export function parseEnvdMetrics(value: WireObject): EnvdMetrics {
 export function parseOomKill(value: unknown): OomKill {
   const entry = objectValue(value, "EnvD returned an invalid oom kill entry");
   return { seq: numberValue(pick(entry, "seq")), process: stringValue(pick(entry, "process")) };
+}
+
+/**
+ * Parses a Manager API `/sandboxes/{id}/metrics` payload into
+ * {@link SandboxMetrics}.
+ */
+export function parseMetrics(value: WireObject): SandboxMetrics {
+  return {
+    timestampUnix: numberValue(pick(value, "timestampUnix")),
+    cpuCount: numberValue(pick(value, "cpuCount")),
+    cpuUsedPct: numberValue(pick(value, "cpuUsedPct")),
+    memTotal: numberValue(pick(value, "memTotal")),
+    memUsed: numberValue(pick(value, "memUsed")),
+    memCache: numberValue(pick(value, "memCache")),
+    diskTotal: numberValue(pick(value, "diskTotal")),
+    diskUsed: numberValue(pick(value, "diskUsed")),
+    timestamp: optionalDate(value.timestamp),
+    cpuPossible: optionalNumber(value.cpuPossible),
+    cpuTarget: optionalNumber(value.cpuTarget),
+    cpuTargetAttempts: optionalNumber(value.cpuTargetAttempts),
+    cpuWritePendingMs: optionalNumber(value.cpuWritePendingMs),
+    envdVersion: optionalString(value.envdVersion),
+  };
 }

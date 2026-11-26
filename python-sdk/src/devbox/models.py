@@ -358,6 +358,46 @@ class Page(Generic[T]):
     total: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SandboxMetrics:
+    """One historical metrics sample of a sandbox, as reported by the Manager API."""
+
+    timestamp_unix: int
+    cpu_count: int
+    cpu_used_pct: float
+    memory_total_bytes: int
+    memory_used_bytes: int
+    memory_cache_bytes: int
+    disk_total_bytes: int
+    disk_used_bytes: int
+    timestamp: datetime | None = None
+    cpu_possible: int | None = None
+    cpu_target: int | None = None
+    cpu_target_attempts: int | None = None
+    cpu_write_pending_ms: int | None = None
+    envd_version: str | None = None
+
+    @classmethod
+    def from_wire(cls, value: Mapping[str, Any]) -> SandboxMetrics:
+        """Parses a Manager API ``/sandboxes/{id}/metrics`` payload."""
+        return cls(
+            timestamp_unix=_integer(_pick(value, "timestampUnix")),
+            cpu_count=_integer(_pick(value, "cpuCount")),
+            cpu_used_pct=_number(_pick(value, "cpuUsedPct")),
+            memory_total_bytes=_integer(_pick(value, "memTotal")),
+            memory_used_bytes=_integer(_pick(value, "memUsed")),
+            memory_cache_bytes=_integer(_pick(value, "memCache")),
+            disk_total_bytes=_integer(_pick(value, "diskTotal")),
+            disk_used_bytes=_integer(_pick(value, "diskUsed")),
+            timestamp=parse_optional_datetime(value.get("timestamp")),
+            cpu_possible=_optional_int(value.get("cpuPossible")),
+            cpu_target=_optional_int(value.get("cpuTarget")),
+            cpu_target_attempts=_optional_int(value.get("cpuTargetAttempts")),
+            cpu_write_pending_ms=_optional_int(value.get("cpuWritePendingMs")),
+            envd_version=_optional_str(value.get("envdVersion")),
+        )
+
+
 def parse_optional_datetime(value: object) -> datetime | None:
     """Parses a timestamp (ISO text, epoch seconds or datetime) to UTC-aware
     :class:`datetime`; returns ``None`` for empty input."""

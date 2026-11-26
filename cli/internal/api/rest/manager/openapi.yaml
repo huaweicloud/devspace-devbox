@@ -99,6 +99,28 @@ paths:
         "426": {$ref: "#/components/responses/UpgradeRequired"}
         "204": {description: Deleted}
         "404": {$ref: "#/components/responses/NotFound"}
+  /sandboxes/{sandboxID}/metrics:
+    parameters:
+      - {$ref: "#/components/parameters/SandboxID"}
+    get:
+      operationId: getSandboxMetrics
+      description: Historical metrics of a sandbox, collected every 5 seconds. Omitted bounds default to the earliest sample / now.
+      parameters:
+        - {name: start, in: query, schema: {type: integer, format: int64}}
+        - {name: end, in: query, schema: {type: integer, format: int64}}
+      responses:
+        "426": {$ref: "#/components/responses/UpgradeRequired"}
+        "200":
+          description: Metrics samples, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/SandboxMetricsPoint"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
   /sandboxes/{sandboxID}/connect:
     parameters:
       - {$ref: "#/components/parameters/SandboxID"}
@@ -301,6 +323,24 @@ components:
         cpuCount: {type: integer, format: int32}
         memoryMB: {type: integer, format: int32}
         diskSizeMB: {type: integer, format: int32}
+    SandboxMetricsPoint:
+      type: object
+      required: [timestampUnix, cpuCount, cpuUsedPct, memTotal, memUsed, memCache, diskTotal, diskUsed]
+      properties:
+        timestamp: {type: string, format: date-time}
+        timestampUnix: {type: integer, format: int64}
+        cpuCount: {type: integer, format: int32}
+        cpuUsedPct: {type: number, format: float}
+        memTotal: {type: integer, format: int64}
+        memUsed: {type: integer, format: int64}
+        memCache: {type: integer, format: int64}
+        diskTotal: {type: integer, format: int64}
+        diskUsed: {type: integer, format: int64}
+        cpuPossible: {type: integer, format: int32}
+        cpuTarget: {type: integer, format: int32}
+        cpuTargetAttempts: {type: integer, format: int32}
+        cpuWritePendingMs: {type: integer, format: int64}
+        envdVersion: {type: string}
   responses:
     UpgradeRequired:
       description: Client version is below the configured minimum; upgrade before retrying

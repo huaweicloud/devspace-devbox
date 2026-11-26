@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/huaweicloud/devspace-devbox/cli/internal/api/rest/manager"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 
@@ -109,5 +110,61 @@ func TestCheckStatusUpgradeRequired(t *testing.T) {
 	}
 	if !strings.Contains(ue.Error(), i18n.T(i18n.Msg.Client.UpgradeRequired)) {
 		t.Fatalf("Error() = %q, want the localized hint", ue.Error())
+	}
+}
+
+// TestGetSandboxMetricsParamsAndParse verifies the metrics path wiring: query
+// parameters round-trip (start/end Unix seconds, omitted when unset) and the
+// 200 body decodes into SandboxMetricsPoint values, including the devbox
+// extension fields.
+func TestGetSandboxMetricsParamsAndParse(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sandboxes/sbx-1/metrics" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"timestamp":"2026-11-18T08:00:00Z","timestampUnix":1794988800,` +
+			`"cpuCount":2,"cpuUsedPct":12.5,"memTotal":2700000000,"memUsed":300000000,"memCache":500000000,` +
+			`"diskTotal":10737418240,"diskUsed":1073741824,"cpuPossible":2,"cpuTarget":2,` +
+			`"cpuTargetAttempts":1,"cpuWritePendingMs":0,"envdVersion":"0.3.0"}]`))
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, "", nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	start := int64(1000)
+	end := int64(2000)
+	points, err := c.GetSandboxMetrics(context.Background(), "sbx-1", &manager.GetSandboxMetricsParams{
+		Start: &start,
+		End:   &end,
+	})
+	if err != nil {
+		t.Fatalf("GetSandboxMetrics: %v", err)
+	}
+	if gotQuery != "start=1000&end=2000" {
+		t.Fatalf("query = %q, want %q", gotQuery, "start=1000&end=2000")
+	}
+	if len(points) != 1 {
+		t.Fatalf("points = %d, want 1", len(points))
+	}
+	p := points[0]
+	if p.TimestampUnix != 1794988800 || p.CpuUsedPct != 12.5 || p.MemTotal != 2700000000 {
+		t.Fatalf("decoded point mismatch: %+v", p)
+	}
+	if p.CpuPossible == nil || *p.CpuPossible != 2 || p.EnvdVersion == nil || *p.EnvdVersion != "0.3.0" {
+		t.Fatalf("extension fields not decoded: %+v", p)
+	}
+
+	if _, err := c.GetSandboxMetrics(context.Background(), "sbx-1", nil); err != nil {
+		t.Fatalf("GetSandboxMetrics without params: %v", err)
+	}
+	if gotQuery != "" {
+		t.Fatalf("query = %q, want empty without params", gotQuery)
 	}
 }

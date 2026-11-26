@@ -11,6 +11,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from datetime import datetime, timezone
 from types import TracebackType
 from typing import Any, Literal
 from urllib.parse import quote
@@ -29,6 +30,7 @@ from .models import (
     SandboxConnection,
     SandboxInfo,
     SandboxLifecycle,
+    SandboxMetrics,
     SandboxState,
 )
 from .pty import AsyncPty, Pty
@@ -132,6 +134,24 @@ class Sandboxes:
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
 
+    def metrics(self, sandbox_ids: Sequence[str]) -> Mapping[str, SandboxMetrics]:
+        """Return the latest metrics sample for 1-100 sandboxes in one request.
+
+        The Manager queries the collected time series; a sandbox that has
+        never been sampled is simply absent from the result.
+        """
+        payload = _mapping(
+            self._transport.request(
+                "GET",
+                "/sandboxes/metrics",
+                params={"sandbox_ids": ",".join(_sandbox_ids(sandbox_ids))},
+            )
+        )
+        values = _mapping(payload.get("sandboxes", {}))
+        return {
+            str(key): SandboxMetrics.from_wire(_mapping(value)) for key, value in values.items()
+        }
+
 
 class AsyncSandboxes:
     """Asynchronous sandbox lifecycle operations bound to a reusable client."""
@@ -226,6 +246,24 @@ class AsyncSandboxes:
             ),
         )
         return _sandbox_page(payload, headers.get("X-Next-Token"), headers.get("X-Total-Running"))
+
+    async def metrics(self, sandbox_ids: Sequence[str]) -> Mapping[str, SandboxMetrics]:
+        """Return the latest metrics sample for 1-100 sandboxes in one request.
+
+        The Manager queries the collected time series; a sandbox that has
+        never been sampled is simply absent from the result.
+        """
+        payload = _mapping(
+            await self._transport.request(
+                "GET",
+                "/sandboxes/metrics",
+                params={"sandbox_ids": ",".join(_sandbox_ids(sandbox_ids))},
+            )
+        )
+        values = _mapping(payload.get("sandboxes", {}))
+        return {
+            str(key): SandboxMetrics.from_wire(_mapping(value)) for key, value in values.items()
+        }
 
 
 class Sandbox:
@@ -365,6 +403,21 @@ class Sandbox:
             _mapping(self._control.request("GET", f"/sandboxes/{_id(self.sandbox_id)}"))
         )
         return self._info
+
+    def get_metrics(
+        self, *, start: int | datetime | None = None, end: int | datetime | None = None
+    ) -> tuple[SandboxMetrics, ...]:
+        """Return the historical metrics series collected every 5 seconds.
+
+        Both bounds are optional (Unix seconds or :class:`datetime`); omitting
+        ``end`` defaults to "now".
+        """
+        payload = self._control.request(
+            "GET",
+            f"/sandboxes/{_id(self.sandbox_id)}/metrics",
+            params=_metric_params(start, end),
+        )
+        return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
 
     def is_running(self) -> bool:
         """Return whether the Manager reports the sandbox as running."""
@@ -647,6 +700,21 @@ class AsyncSandbox:
             _mapping(await self._control.request("GET", f"/sandboxes/{_id(self.sandbox_id)}"))
         )
         return self._info
+
+    async def get_metrics(
+        self, *, start: int | datetime | None = None, end: int | datetime | None = None
+    ) -> tuple[SandboxMetrics, ...]:
+        """Return the historical metrics series collected every 5 seconds.
+
+        Both bounds are optional (Unix seconds or :class:`datetime`); omitting
+        ``end`` defaults to "now".
+        """
+        payload = await self._control.request(
+            "GET",
+            f"/sandboxes/{_id(self.sandbox_id)}/metrics",
+            params=_metric_params(start, end),
+        )
+        return tuple(SandboxMetrics.from_wire(item) for item in _items(payload))
 
     async def is_running(self) -> bool:
         """Return whether the Manager reports the sandbox as running."""
@@ -950,6 +1018,30 @@ def _mapping(value: object) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ProtocolError("DevBox returned an invalid object response")
     return value
+
+
+def _sandbox_ids(values: Sequence[str]) -> tuple[str, ...]:
+    ids = tuple(dict.fromkeys(value for value in values if value))
+    if not ids or len(ids) > 100:
+        raise ValueError("sandbox_ids must contain between 1 and 100 unique IDs")
+    return ids
+
+
+def _metric_params(start: int | datetime | None, end: int | datetime | None) -> dict[str, int]:
+    params: dict[str, int] = {}
+    if start is not None:
+        params["start"] = _metric_timestamp(start)
+    if end is not None:
+        params["end"] = _metric_timestamp(end)
+    return params
+
+
+def _metric_timestamp(value: int | datetime) -> int:
+    if isinstance(value, int):
+        return value
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
 
 
 def _checked_timeout(timeout: int) -> int:

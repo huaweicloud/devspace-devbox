@@ -422,3 +422,124 @@ describe("sandboxes", () => {
     await client.close();
   });
 });
+
+describe("sandbox metrics", () => {
+  let agent: MockAgent | undefined;
+  afterEach(async () => {
+    await agent?.close();
+    agent = undefined;
+  });
+
+  const metricsPoint = {
+    timestamp: "2026-11-18T08:00:00Z",
+    timestampUnix: 1_794_988_800,
+    cpuCount: 2,
+    cpuUsedPct: 12.5,
+    memTotal: 2_700_000_000,
+    memUsed: 300_000_000,
+    memCache: 500_000_000,
+    diskTotal: 10_737_418_240,
+    diskUsed: 1_073_741_824,
+    cpuPossible: 2,
+    cpuTarget: 2,
+    cpuTargetAttempts: 1,
+    cpuWritePendingMs: 0,
+    envdVersion: "0.3.0",
+  };
+
+  it("fetches the historical series with optional time bounds", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager
+      .intercept({ path: "/sandboxes/sbx-1/connect", method: "POST" })
+      .reply(201, sandboxResponse);
+    manager
+      .intercept({
+        path: "/sandboxes/sbx-1/metrics?start=1000&end=2000",
+        method: "GET",
+      })
+      .reply(200, [metricsPoint]);
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      const sandbox = await client.sandboxes.connect("sbx-1");
+      const series = await sandbox.getMetrics({ start: 1000, end: 2000 });
+      expect(series).toHaveLength(1);
+      const point = series.at(0);
+      if (!point) throw new Error("expected one metrics point");
+      expect(point.timestampUnix).toBe(1_794_988_800);
+      expect(point.cpuUsedPct).toBe(12.5);
+      expect(point.timestamp).toEqual(new Date("2026-11-18T08:00:00Z"));
+      expect(point.cpuPossible).toBe(2);
+      expect(point.cpuWritePendingMs).toBe(0);
+      expect(point.envdVersion).toBe("0.3.0");
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("converts Date bounds to Unix seconds and omits absent bounds", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager
+      .intercept({ path: "/sandboxes/sbx-1/connect", method: "POST" })
+      .reply(201, sandboxResponse);
+    manager.intercept({ path: "/sandboxes/sbx-1/metrics", method: "GET" }).reply(200, []);
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      const sandbox = await client.sandboxes.connect("sbx-1");
+      await sandbox.getMetrics();
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("fetches the latest sample for a batch of sandboxes", async () => {
+    agent = mockAgent();
+    const manager = agent.get("https://manager.example.test");
+    manager
+      .intercept({
+        path: "/sandboxes/metrics?sandbox_ids=sbx-1%2Csbx-2",
+        method: "GET",
+      })
+      .reply(200, { sandboxes: { "sbx-1": metricsPoint } });
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: agent,
+    });
+    try {
+      const latest = await client.sandboxes.metrics(["sbx-1", "sbx-2", "sbx-1"]);
+      expect(Object.keys(latest)).toEqual(["sbx-1"]);
+      expect(latest["sbx-1"]?.memTotal).toBe(2_700_000_000);
+      agent.assertNoPendingInterceptors();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("rejects an empty or oversized metrics batch", async () => {
+    const client = new DevBox({
+      apiKey: "key",
+      apiUrl: "https://manager.example.test",
+      dispatcher: mockAgent(),
+    });
+    try {
+      await expect(client.sandboxes.metrics([])).rejects.toThrow(RangeError);
+      await expect(
+        client.sandboxes.metrics(Array.from({ length: 101 }, (_, i) => `sbx-${i}`)),
+      ).rejects.toThrow(RangeError);
+    } finally {
+      await client.close();
+    }
+  });
+});

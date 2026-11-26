@@ -69,6 +69,11 @@ type SandboxMessages struct {
 	InvalidSandboxID    Message
 	InvalidTemplateID   Message
 	InfoShort           Message
+	MetricsShort        Message
+	MetricsEmpty        Message
+	MetricsInvalidTime  Message
+	FlagMetricsStart    Message
+	FlagMetricsEnd      Message
 	KillShort           Message
 	Killed              Message
 	KillAllConflict     Message

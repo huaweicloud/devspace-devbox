@@ -112,6 +112,30 @@ type SandboxLifecycleOnTimeout string
 // SandboxState defines model for SandboxState.
 type SandboxState string
 
+// SandboxMetricsPoint defines model for SandboxMetricsPoint.
+type SandboxMetricsPoint struct {
+	CpuCount          int32      `json:"cpuCount"`
+	CpuPossible       *int32     `json:"cpuPossible,omitempty"`
+	CpuTarget         *int32     `json:"cpuTarget,omitempty"`
+	CpuTargetAttempts *int32     `json:"cpuTargetAttempts,omitempty"`
+	CpuUsedPct        float32    `json:"cpuUsedPct"`
+	CpuWritePendingMs *int64     `json:"cpuWritePendingMs,omitempty"`
+	DiskTotal         int64      `json:"diskTotal"`
+	DiskUsed          int64      `json:"diskUsed"`
+	EnvdVersion       *string    `json:"envdVersion,omitempty"`
+	MemCache          int64      `json:"memCache"`
+	MemTotal          int64      `json:"memTotal"`
+	MemUsed           int64      `json:"memUsed"`
+	Timestamp         *time.Time `json:"timestamp,omitempty"`
+	TimestampUnix     int64      `json:"timestampUnix"`
+}
+
+// GetSandboxMetricsParams defines parameters for GetSandboxMetrics.
+type GetSandboxMetricsParams struct {
+	Start *int64 `form:"start,omitempty" json:"start,omitempty"`
+	End   *int64 `form:"end,omitempty" json:"end,omitempty"`
+}
+
 // Template defines model for Template.
 type Template struct {
 	Aliases    []string `json:"aliases"`
@@ -274,6 +298,9 @@ type ClientInterface interface {
 	// GetSandbox performs a GET /sandboxes/{sandboxID} (the `GetSandbox` operationId) request.
 	GetSandbox(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSandboxMetrics performs a GET /sandboxes/{sandboxID}/metrics (the `GetSandboxMetrics` operationId) request.
+	GetSandboxMetrics(ctx context.Context, sandboxID SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ConnectSandboxWithBody performs a POST /sandboxes/{sandboxID}/connect (the `ConnectSandbox` operationId) request,
 	// with any type of body and a specified content type.
 	ConnectSandboxWithBody(ctx context.Context, sandboxID SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -370,6 +397,19 @@ func (c *Client) DeleteSandbox(ctx context.Context, sandboxID SandboxID, reqEdit
 // GetSandbox performs a GET /sandboxes/{sandboxID} (the `GetSandbox` operationId) request.
 func (c *Client) GetSandbox(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSandboxRequest(c.Server, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSandboxMetrics performs a GET /sandboxes/{sandboxID}/metrics (the `GetSandboxMetrics` operationId) request.
+func (c *Client) GetSandboxMetrics(ctx context.Context, sandboxID SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxMetricsRequest(c.Server, sandboxID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -650,6 +690,56 @@ func NewGetSandboxRequest(server string, sandboxID SandboxID) (*http.Request, er
 	return req, nil
 }
 
+// NewGetSandboxMetricsRequest generates requests for GetSandboxMetrics (GET /sandboxes/{sandboxID}/metrics).
+func NewGetSandboxMetricsRequest(server string, sandboxID SandboxID, params *GetSandboxMetricsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "sandboxID", sandboxID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := newOperationRequest(server, http.MethodGet, fmt.Sprintf("/sandboxes/%s/metrics", pathParam0), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := req.URL.Query()
+		var rawQueryFragments []string
+
+		for _, qp := range []struct {
+			name    string
+			value   any
+			typ     string
+			explode bool
+		}{
+			{"start", params.Start, "integer", true},
+			{"end", params.End, "integer", true},
+		} {
+			// A typed nil pointer stored in an interface still compares
+			// != nil; check via reflect Kind/IsNil instead.
+			if v := reflect.ValueOf(qp.value); v.Kind() == reflect.Pointer && v.IsNil() {
+				continue
+			}
+			queryFrag, err := runtime.StyleParamWithOptions("form", qp.explode, qp.name, qp.value, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: qp.typ, Format: ""})
+			if err != nil {
+				return nil, err
+			}
+			rawQueryFragments = append(rawQueryFragments, strings.Split(queryFrag, "&")...)
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		req.URL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	return req, nil
+}
+
 // NewConnectSandboxRequest calls the generic ConnectSandbox builder with application/json body
 func NewConnectSandboxRequest(server string, sandboxID SandboxID, body ConnectSandboxJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -865,6 +955,10 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetSandboxWithResponse(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxResponse, error)
+
+	// GetSandboxMetricsWithResponse performs a GET /sandboxes/{sandboxID}/metrics (the `GetSandboxMetrics` operationId) request,
+	// and returns a wrapper object for the known response body format(s).
+	GetSandboxMetricsWithResponse(ctx context.Context, sandboxID SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*GetSandboxMetricsResponse, error)
 
 	// ConnectSandboxWithBodyWithResponse performs a POST /sandboxes/{sandboxID}/connect (the `ConnectSandbox` operationId) request,
 	// with any type of body and a specified content type.
@@ -1104,6 +1198,21 @@ type GetSandboxResponse struct {
 	JSON200 *Sandbox
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *NotFound
+}
+
+type GetSandboxMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]SandboxMetricsPoint
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -1516,6 +1625,17 @@ func (c *ClientWithResponses) GetSandboxWithResponse(ctx context.Context, sandbo
 	return ParseGetSandboxResponse(rsp)
 }
 
+// GetSandboxMetricsWithResponse performs a GET /sandboxes/{sandboxID}/metrics (the `GetSandboxMetrics` operationId) request,
+//
+//	and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetSandboxMetricsWithResponse(ctx context.Context, sandboxID SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*GetSandboxMetricsResponse, error) {
+	rsp, err := c.GetSandboxMetrics(ctx, sandboxID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxMetricsResponse(rsp)
+}
+
 // ConnectSandboxWithBodyWithResponse performs a POST /sandboxes/{sandboxID}/connect (the `ConnectSandbox` operationId) request,
 // with any type of body and a specified content type.
 //
@@ -1784,6 +1904,51 @@ func ParseGetSandboxResponse(rsp *http.Response) (*GetSandboxResponse, error) {
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		response.JSON404, err = decodeJSON[NotFound](bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSandboxMetricsResponse parses an HTTP response from a GetSandboxMetricsWithResponse call
+func ParseGetSandboxMetricsResponse(rsp *http.Response) (*GetSandboxMetricsResponse, error) {
+	bodyBytes, err := readResponseBody(rsp)
+
+	response := &GetSandboxMetricsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		response.JSON200, err = decodeJSON[[]SandboxMetricsPoint](bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		response.JSON400, err = decodeJSON[Error](bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		response.JSON401, err = decodeJSON[Error](bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		response.JSON404, err = decodeJSON[NotFound](bodyBytes)
+		if err != nil {
+			return nil, err
+		}
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		response.JSON503, err = decodeJSON[Error](bodyBytes)
 		if err != nil {
 			return nil, err
 		}

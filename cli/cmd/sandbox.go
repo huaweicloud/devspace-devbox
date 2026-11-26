@@ -251,6 +251,89 @@ func runSandboxInfo(cmd *cobra.Command, args []string) error {
 	return output.Print(cmd.OutOrStdout(), out(cmd), output.Spec{JSON: helpers.SandboxJSON(sb), KV: kv})
 }
 
+// sandboxMetricsCmd's flag bound variables.
+var (
+	sandboxMetricsStart  string
+	sandboxMetricsEnd    string
+	sandboxMetricsFormat string
+)
+
+// sandboxMetricsCmd implements `devbox sandbox metrics <sandboxID>`, corresponding to
+// GET /sandboxes/{sandboxID}/metrics (Manager queries the ClickHouse time series).
+var sandboxMetricsCmd = &cobra.Command{
+	Use:     "metrics|mt <sandboxID>",
+	Aliases: []string{"metrics", "mt"},
+	Short:   i18n.T(i18n.Msg.Sandbox.MetricsShort),
+	Args:    cobra.ExactArgs(1),
+	RunE:    runError(runSandboxMetrics),
+}
+
+// metricsTime parses a --start/--end flag value: Unix seconds or RFC3339.
+func metricsTime(value string) (*int64, error) {
+	if value == "" {
+		return nil, nil
+	}
+	if secs, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return &secs, nil
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, fmt.Errorf(i18n.T(i18n.Msg.Sandbox.MetricsInvalidTime), value)
+	}
+	secs := t.Unix()
+	return &secs, nil
+}
+
+// runSandboxMetrics fetches the historical metrics series and prints a table
+// (one row per 5s sample) or JSON.
+func runSandboxMetrics(cmd *cobra.Command, args []string) error {
+	if err := helpers.ValidateSandboxID(args[0]); err != nil {
+		return err
+	}
+	start, err := metricsTime(sandboxMetricsStart)
+	if err != nil {
+		return err
+	}
+	end, err := metricsTime(sandboxMetricsEnd)
+	if err != nil {
+		return err
+	}
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
+	points, err := c.GetSandboxMetrics(cmd.Context(), args[0], &manager.GetSandboxMetricsParams{
+		Start: start,
+		End:   end,
+	})
+	if err != nil {
+		return err
+	}
+	if len(points) == 0 && out(cmd) == output.FormatText {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), i18n.T(i18n.Msg.Sandbox.MetricsEmpty))
+		return nil
+	}
+	rows := make([][]string, 0, len(points))
+	for i := range points {
+		p := &points[i]
+		rows = append(rows, []string{
+			output.FormatTimePtr(p.Timestamp),
+			strconv.FormatInt(p.TimestampUnix, 10),
+			strconv.FormatFloat(float64(p.CpuUsedPct), 'f', -1, 32),
+			strconv.Itoa(int(p.CpuCount)),
+			strconv.FormatInt(p.MemUsed, 10),
+			strconv.FormatInt(p.MemTotal, 10),
+			strconv.FormatInt(p.DiskUsed, 10),
+			strconv.FormatInt(p.DiskTotal, 10),
+		})
+	}
+	return output.Print(cmd.OutOrStdout(), out(cmd), output.Spec{
+		JSON:    points,
+		Headers: []string{"TIMESTAMP", "UNIX", "CPU(%)", "VCPUS", "MEM USED", "MEM TOTAL", "DISK USED", "DISK TOTAL"},
+		Rows:    rows,
+	})
+}
+
 // sandboxKillCmd's flag bound variables.
 var (
 	sandboxKillAll      bool
@@ -662,6 +745,13 @@ func init() {
 	sandboxListCmd.Flags().StringVarP(&sandboxListFormat, "format", "f", "pretty",
 		i18n.T(i18n.Msg.Sandbox.FlagFormat))
 
+	sandboxMetricsCmd.Flags().StringVar(&sandboxMetricsStart, "start", "",
+		i18n.T(i18n.Msg.Sandbox.FlagMetricsStart))
+	sandboxMetricsCmd.Flags().StringVar(&sandboxMetricsEnd, "end", "",
+		i18n.T(i18n.Msg.Sandbox.FlagMetricsEnd))
+	sandboxMetricsCmd.Flags().StringVarP(&sandboxMetricsFormat, "format", "f", "pretty",
+		i18n.T(i18n.Msg.Sandbox.FlagFormat))
+
 	sandboxKillCmd.Flags().BoolVarP(&sandboxKillAll, "all", "a", false,
 		i18n.T(i18n.Msg.Sandbox.FlagKillAll))
 	sandboxKillCmd.Flags().StringSliceVarP(&sandboxKillState, "state", "s", nil,
@@ -694,6 +784,7 @@ func init() {
 		sandboxCreateCmd,
 		sandboxListCmd,
 		sandboxInfoCmd,
+		sandboxMetricsCmd,
 		sandboxKillCmd,
 		sandboxPauseCmd,
 		sandboxResumeCmd,

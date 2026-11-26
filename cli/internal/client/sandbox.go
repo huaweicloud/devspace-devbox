@@ -62,6 +62,21 @@ func (c *Client) GetSandbox(ctx context.Context, sandboxID string) (*manager.San
 	return resp.JSON200, nil
 }
 
+// GetSandboxMetrics returns the historical metrics series of a sandbox.
+func (c *Client) GetSandboxMetrics(ctx context.Context, sandboxID string, params *manager.GetSandboxMetricsParams) ([]manager.SandboxMetricsPoint, error) {
+	resp, err := c.manager.GetSandboxMetricsWithResponse(ctx, sandboxID, params)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(resp.HTTPResponse, resp.Body); err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("%s", i18n.T(i18n.Msg.Client.EmptyResponseBody))
+	}
+	return *resp.JSON200, nil
+}
+
 // DeleteSandbox kills a sandbox.
 func (c *Client) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	resp, err := c.manager.DeleteSandboxWithResponse(ctx, sandboxID)

@@ -17,10 +17,12 @@ import {
 import {
   type Page,
   parseConnection,
+  parseMetrics,
   parseSandboxInfo,
   type SandboxConnection,
   type SandboxInfo,
   type SandboxLifecycle,
+  type SandboxMetrics,
   SandboxState,
 } from "./models.js";
 import { Pty } from "./pty.js";
@@ -145,6 +147,26 @@ export class Sandboxes {
       total: total ? responseInteger(total, "X-Total-Running") : undefined,
     };
   }
+
+  /**
+   * Returns the latest metrics sample for 1-100 sandboxes in one request
+   * (Manager queries the collected time series; a sandbox never sampled
+   * is simply absent from the result).
+   */
+  async metrics(sandboxIds: readonly string[]): Promise<Record<string, SandboxMetrics>> {
+    const ids = [...new Set(sandboxIds.filter(Boolean))];
+    if (ids.length < 1 || ids.length > 100)
+      throw new RangeError("sandboxIds must contain between 1 and 100 unique IDs");
+    const payload = objectValue(
+      await this.#transport.request("GET", "/sandboxes/metrics", {
+        params: { sandbox_ids: ids.join(",") },
+      }),
+    );
+    const values = objectValue(payload.sandboxes ?? {});
+    return Object.fromEntries(
+      Object.entries(values).map(([id, value]) => [id, parseMetrics(objectValue(value))]),
+    );
+  }
 }
 
 /**
@@ -256,6 +278,27 @@ export class Sandbox {
       objectValue(await this.#control.request("GET", `/sandboxes/${identifier(this.sandboxId)}`)),
     );
     return this.#info;
+  }
+
+  /**
+   * Returns the historical metrics series of this sandbox, collected by the
+   * platform every 5s. Both bounds are optional (Unix seconds or Date);
+   * omitting `end` defaults to "now".
+   */
+  async getMetrics(
+    options: { start?: number | Date; end?: number | Date } = {},
+  ): Promise<SandboxMetrics[]> {
+    const payload = await this.#control.request(
+      "GET",
+      `/sandboxes/${identifier(this.sandboxId)}/metrics`,
+      {
+        params: {
+          start: metricsTimestamp(options.start),
+          end: metricsTimestamp(options.end),
+        },
+      },
+    );
+    return objectItems(payload).map(parseMetrics);
   }
 
   /** Reports whether the sandbox is running; false when it no longer exists. */
@@ -501,6 +544,17 @@ function responseInteger(value: string, field: string): number {
   if (!Number.isInteger(parsed))
     throw new ProtocolError(`DevBox response header is not an integer: ${field}`);
   return parsed;
+}
+
+function metricsTimestamp(value: number | Date | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    if (!Number.isFinite(ms)) throw new TypeError("metrics timestamp is an invalid Date");
+    return Math.floor(ms / 1000);
+  }
+  if (!Number.isFinite(value)) throw new TypeError("metrics timestamp must be a number or Date");
+  return Math.floor(value);
 }
 
 export { contextFrom, controlTransport };

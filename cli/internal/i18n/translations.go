@@ -207,6 +207,26 @@ func init() {
 				ZH: "查看沙箱信息",
 				EN: "show information for a sandbox",
 			},
+			MetricsShort: Message{
+				ZH: "查看沙箱历史监控指标（5 秒采样）",
+				EN: "show historical metrics for a sandbox (5s sampling)",
+			},
+			MetricsEmpty: Message{
+				ZH: "该时间范围内没有监控数据",
+				EN: "no metrics found for the requested range",
+			},
+			MetricsInvalidTime: Message{
+				ZH: "无效的时间参数 %q（支持格式：Unix 秒或 2006-01-02T15:04:05）",
+				EN: "invalid time %q (accepted formats: Unix seconds or 2006-01-02T15:04:05)",
+			},
+			FlagMetricsStart: Message{
+				ZH: "起始时间（Unix 秒或 RFC3339，默认最早样本）",
+				EN: "range start (Unix seconds or RFC3339, defaults to the earliest sample)",
+			},
+			FlagMetricsEnd: Message{
+				ZH: "结束时间（Unix 秒或 RFC3339，默认当前时间）",
+				EN: "range end (Unix seconds or RFC3339, defaults to now)",
+			},
 			KillShort: Message{
 				ZH: "终止沙箱",
 				EN: "kill a sandbox",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -21,7 +22,12 @@ from devbox import (
 )
 from devbox.config import ConnectionConfig
 from devbox.models import SandboxConnection
-from devbox.sandbox import _checked_timeout, _gateway_headers, _gateway_url
+from devbox.sandbox import (
+    _checked_timeout,
+    _gateway_headers,
+    _gateway_url,
+    _metric_timestamp,
+)
 
 
 def test_pause_resume_replaces_runtime_credentials() -> None:
@@ -626,3 +632,106 @@ def detail_response() -> dict[str, object]:
         "diskSizeMB": 10240,
         "state": "running",
     }
+
+
+def test_sandbox_metrics_series_and_batch() -> None:
+    point = {
+        "timestamp": "2026-11-18T08:00:00Z",
+        "timestampUnix": 1794988800,
+        "cpuCount": 2,
+        "cpuUsedPct": 12.5,
+        "memTotal": 2700000000,
+        "memUsed": 300000000,
+        "memCache": 500000000,
+        "diskTotal": 10737418240,
+        "diskUsed": 1073741824,
+        "cpuPossible": 2,
+        "cpuTarget": 2,
+        "cpuTargetAttempts": 1,
+        "cpuWritePendingMs": 0,
+        "envdVersion": "0.3.0",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sandboxes/sbx_123/metrics":
+            assert request.url.params.get("start") == "1000"
+            assert request.url.params.get("end") == "2000"
+            return httpx.Response(200, json=[point])
+        if request.url.path == "/sandboxes/metrics":
+            assert request.url.params.get("sandbox_ids") == "sbx_123,sbx_456"
+            return httpx.Response(200, json={"sandboxes": {"sbx_123": point}})
+        return httpx.Response(201, json=connection_response())
+
+    with client(handler) as api:
+        sandbox = api.sandboxes.create()
+        try:
+            series = sandbox.get_metrics(start=1000, end=2000)
+            assert len(series) == 1
+            sample = series[0]
+            assert sample.timestamp_unix == 1794988800
+            assert sample.cpu_used_pct == 12.5
+            assert sample.timestamp == datetime(2026, 11, 18, 8, 0, tzinfo=timezone.utc)
+            assert sample.cpu_possible == 2
+            assert sample.cpu_write_pending_ms == 0
+            assert sample.envd_version == "0.3.0"
+
+            naive_start = datetime(2026, 11, 18, 8, 0)
+            assert _metric_timestamp(naive_start) == 1794988800
+
+            latest = api.sandboxes.metrics(["sbx_123", "sbx_456", "sbx_123"])
+            assert list(latest) == ["sbx_123"]
+            assert latest["sbx_123"].memory_total_bytes == 2700000000
+        finally:
+            sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_async_sandbox_metrics_series_and_batch() -> None:
+    point = {
+        "timestamp": "2026-11-18T08:00:00Z",
+        "timestampUnix": 1794988800,
+        "cpuCount": 2,
+        "cpuUsedPct": 12.5,
+        "memTotal": 2700000000,
+        "memUsed": 300000000,
+        "memCache": 500000000,
+        "diskTotal": 10737418240,
+        "diskUsed": 1073741824,
+        "cpuPossible": 2,
+        "cpuTarget": 2,
+        "cpuTargetAttempts": 1,
+        "cpuWritePendingMs": 0,
+        "envdVersion": "0.3.0",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sandboxes/sbx_123/metrics":
+            assert request.url.params.get("start") == "1794988800"
+            return httpx.Response(200, json=[point])
+        if request.url.path == "/sandboxes/metrics":
+            return httpx.Response(200, json={"sandboxes": {"sbx_123": point}})
+        return httpx.Response(201, json=connection_response())
+
+    async with AsyncDevBox(
+        api_key="secret", api_url="https://api.test", http_transport=httpx.MockTransport(handler)
+    ) as api:
+        sandbox = await api.sandboxes.create()
+        try:
+            series = await sandbox.get_metrics(
+                start=datetime(2026, 11, 18, 8, 0, tzinfo=timezone.utc)
+            )
+            assert len(series) == 1
+            assert series[0].envd_version == "0.3.0"
+
+            latest = await api.sandboxes.metrics(["sbx_123"])
+            assert latest["sbx_123"].cpu_used_pct == 12.5
+        finally:
+            await sandbox.close()
+
+
+def test_sandbox_metrics_rejects_invalid_batch() -> None:
+    with client(lambda request: httpx.Response(200, json={"sandboxes": {}})) as api:
+        with pytest.raises(ValueError, match="1 and 100"):
+            api.sandboxes.metrics([])
+        with pytest.raises(ValueError, match="1 and 100"):
+            api.sandboxes.metrics([f"sbx_{i}" for i in range(101)])
