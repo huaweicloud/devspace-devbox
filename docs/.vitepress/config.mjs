@@ -12,6 +12,7 @@ export default defineConfig({
       { text: "API 参考", link: "/api/" },
       { text: "SDK 参考", link: "/reference/sdk" },
       { text: "CLI 参考", link: "/cli/" },
+      { text: "SKILL 参考", link: "/skill/" },
     ],
     sidebar: [
       {
@@ -68,6 +69,12 @@ export default defineConfig({
           { text: "登录与认证", link: "/cli/authentication" },
           { text: "模板", link: "/cli/templates" },
           { text: "沙箱管理", link: "/cli/sandboxes" },
+        ],
+      },
+      {
+        text: "SKILL 参考",
+        items: [
+          { text: "AI Agent Skill", link: "/skill/" },
         ],
       },
       {
