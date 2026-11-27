@@ -36,7 +36,7 @@ export default defineConfig({
         items: [
           { text: "兼容E2B生态", link: "/best-practices/e2b" },
           { text: "沙箱运行代码并浏览器预览", link: "/best-practices/base-web-demo" },
-          { text: "OpenCode模板沙箱创作个人网站", link: "/best-practices/opencode-web-demo" },
+          { text: "用 OpenCode 模板创建并预览个人网站", link: "/best-practices/opencode-web-demo" },
         ],
       },
       {
