@@ -74,7 +74,7 @@ try {
 ```
 :::
 
-`default` 是模板别名，实际可用模板以[模板列表](./guide/templates.md)为准。
+`default` 是 Base 模板的别名。需要用 OpenCode 写代码时，使用 `opencode` 模板，按[个人网站示例](./best-practices/opencode-web-demo.md)配置模型 API Key。规格和预装组件见[选择模板](./guide/templates.md)。
 
 ## 保留还是删除
 
@@ -92,5 +92,5 @@ Python 的 `with Sandbox.create(...)` 会在离开代码块时执行删除。需
 
 - [兼容E2B生态](./best-practices/e2b.md)
 - [沙箱运行代码并浏览器预览](./best-practices/base-web-demo.md)
-- [OpenCode模板沙箱创作个人网站](./best-practices/opencode-web-demo.md)
+- [用 OpenCode 模板创建并预览个人网站](./best-practices/opencode-web-demo.md)
 - [Skill自动管理云沙箱](./best-practices/agent-skill.md)

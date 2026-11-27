@@ -25,12 +25,12 @@ curl --fail-with-body "$DEVBOX_API_URL/templates" \
 ```json
 [
   {
-    "templateID": "tpl-devbox-base-test",
-    "name": "devbox-base-test",
+    "templateID": "tpl-devbox-base",
+    "name": "devbox-base",
     "aliases": ["default"],
     "buildID": "<build-id>",
-    "cpuCount": 2,
-    "memoryMB": 1024,
+    "cpuCount": 1,
+    "memoryMB": 2048,
     "diskSizeMB": 10240
   }
 ]
