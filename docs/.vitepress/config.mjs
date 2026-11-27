@@ -37,6 +37,7 @@ export default defineConfig({
           { text: "兼容E2B生态", link: "/best-practices/e2b" },
           { text: "沙箱运行代码并浏览器预览", link: "/best-practices/base-web-demo" },
           { text: "OpenCode模板沙箱创作个人网站", link: "/best-practices/opencode-web-demo" },
+          { text: "Skill自动管理云沙箱", link: "/best-practices/agent-skill" },
         ],
       },
       {

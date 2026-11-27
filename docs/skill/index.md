@@ -148,4 +148,5 @@ python3 <skill_dir>/evals/run_evals.py --sdk-path "<deps-dir>:<devspace-devbox-s
 - [登录与认证](../cli/authentication.md)
 - [选择模板](../guide/templates.md)
 - [SDK 参考](../reference/sdk.md)
+- [Skill自动管理云沙箱](../best-practices/agent-skill.md)
 - [问题排查](../reference/troubleshooting.md)

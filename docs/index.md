@@ -93,3 +93,4 @@ Python 的 `with Sandbox.create(...)` 会在离开代码块时执行删除。需
 - [兼容E2B生态](./best-practices/e2b.md)
 - [沙箱运行代码并浏览器预览](./best-practices/base-web-demo.md)
 - [OpenCode模板沙箱创作个人网站](./best-practices/opencode-web-demo.md)
+- [Skill自动管理云沙箱](./best-practices/agent-skill.md)
