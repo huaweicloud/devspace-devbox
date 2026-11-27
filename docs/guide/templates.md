@@ -4,36 +4,30 @@
 
 ## 生产模板
 
-生产环境当前提供以下模板：
+| 别名 | 模板 ID | vCPU | 内存 | 磁盘 | 用途 |
+| --- | --- | ---: | ---: | ---: | --- |
+| `default` | `tpl-devbox-base` | 1 | 2 GiB | 10 GiB | 运行代码、调试和预览应用 |
+| `opencode` | `tpl-devbox-opencode` | 1 | 2 GiB | 10 GiB | 在沙箱中用 OpenCode 生成和修改代码 |
 
-| 别名 | 模板 ID | vCPU | 内存 | 磁盘 |
-| --- | --- | --- | ---: | ---: |
-| `default` | `tpl-devbox-base` | 2 | 1 GiB | 10 GiB |
-| `opencode` | `tpl-devbox-opencode` | 2 | 1 GiB | 10 GiB |
-
-
-### 默认模板的预装组件
+### 两个模板的预装组件
 
 | 类别 | 组件与版本 |
 | --- | --- |
-| 操作系统 | openEuler 24.03 LTS（ARM64 / aarch64），Linux 内核 6.6.157 |
+| 操作系统 | openEuler 24.03 LTS（ARM64 / aarch64），Linux 内核 6.6.158 |
 | Python | Python 3.11.6，pip 23.3.1 |
 | JavaScript | Node.js 20.18.0，npm 10.8.2 |
 | 命令行与版本控制 | Bash 5.2.15，Git 2.43.0 |
 | 下载与数据处理 | curl 8.4.0，Wget 1.21.4，jq 1.6，GNU tar 1.35 |
+| 沙箱运行时 | EnvD 0.1.11 |
 
-上表列出沙箱内的组件。JavaScript SDK 的 Node.js 版本要求适用于运行 SDK 的客户端。组件版本以所选 Build 的实际环境为准。
+### OpenCode 模板额外预装的组件
 
-### OpenCode 模板的预装组件
+| 组件 | 版本 | 命令 |
+| --- | --- | --- |
+| OpenCode | 1.18.32 | `opencode` |
+| ripgrep | 15.1.0 | `rg` |
 
-OpenCode 模板面向 AI Agent 编码场景，在默认模板全部组件之上预装：
-
-| 类别 | 组件与版本 |
-| --- | --- |
-| AI Agent CLI | opencode 1.18.32（npm 包 `opencode-ai`），命令入口 `/usr/local/bin/opencode` |
-| 代码搜索 | ripgrep 15.1.0，命令入口 `/usr/local/bin/rg`，opencode 代码搜索依赖 |
-
-其余组件与默认模板一致，版本同样以所选 Build 的实际环境为准。在沙箱内运行 opencode 需要注入模型服务凭证，完整示例见[OpenCode 模板沙箱创作个人网站](../best-practices/opencode-web-demo.md)。
+组件版本以所选 Build 为准。使用 OpenCode 时，按[创建并预览个人网站](../best-practices/opencode-web-demo.md)配置模型 API Key。
 
 ## 查询可用模板
 

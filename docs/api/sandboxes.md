@@ -52,7 +52,7 @@ curl --fail-with-body "$DEVBOX_API_URL/sandboxes" \
 
 | Query 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `template` | string | 按模板 ID 或别名精确筛选，如 `tpl-devbox-base-test` 或 `default`；省略时不限制模板 |
+| `template` | string | 按模板 ID 或别名精确筛选，如 `tpl-devbox-base` 或 `default`；省略时不限制模板 |
 | `state` | string | `running`、`paused`，多个状态用逗号分隔；省略时包含两者 |
 | `metadata` | string | URL 编码的键值筛选条件，如 `project=example&stage=test`；所有条件须同时满足 |
 | `startedAfter` | string | 按本次运行的 `startedAt` 筛选，包含边界；使用带时区的 RFC3339 时间，如 `2026-11-03T00:00:00Z` |
