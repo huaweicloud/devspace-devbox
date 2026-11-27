@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package auth
 
 import (
@@ -57,7 +61,10 @@ func TestStartLoginWithCallback(t *testing.T) {
 func TestStartLoginRejectsMissingKey(t *testing.T) {
 	session := startTestSession(t)
 
-	u, _ := url.Parse(session.URL)
+	u, err := url.Parse(session.URL)
+	if err != nil {
+		t.Fatalf("parse login URL: %v", err)
+	}
 	port := u.Query().Get("callback")
 
 	status := postCallback(t, port, "https://devstation.connect.huaweicloud.com",
@@ -103,7 +110,10 @@ func TestStartLoginRejectsForeignOrigin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			session := startTestSession(t)
 
-			u, _ := url.Parse(session.URL)
+			u, err := url.Parse(session.URL)
+			if err != nil {
+				t.Fatalf("parse login URL: %v", err)
+			}
 			port := u.Query().Get("callback")
 			status := postCallback(t, port, tc.origin,
 				`{"apiKey":"planted-key","userName":"evil","userId":"e-1"}`)
@@ -125,10 +135,14 @@ func TestStartLoginRejectsForeignOrigin(t *testing.T) {
 func TestStartLoginWithNestedResult(t *testing.T) {
 	session := startTestSession(t)
 
-	u, _ := url.Parse(session.URL)
+	u, err := url.Parse(session.URL)
+	if err != nil {
+		t.Fatalf("parse login URL: %v", err)
+	}
 	port := u.Query().Get("callback")
 	postCallback(t, port, "https://devstation.connect.huaweicloud.com",
-		`{"error_code":"0000","error_msg":"success","result":{"apiKey":"nested-key-9","userName":"hw067826022","userId":"u-2"}}`)
+		`{"error_code":"0000","error_msg":"success",`+
+			`"result":{"apiKey":"nested-key-9","userName":"hw067826022","userId":"u-2"}}`)
 
 	cred, ui, err := session.Wait(context.Background())
 	if err != nil {
@@ -147,7 +161,10 @@ func TestCallbackDebugLogging(t *testing.T) {
 
 	session := startTestSession(t)
 
-	u, _ := url.Parse(session.URL)
+	u, err := url.Parse(session.URL)
+	if err != nil {
+		t.Fatalf("parse login URL: %v", err)
+	}
 	port := u.Query().Get("callback")
 	postCallback(t, port, "https://devstation.connect.huaweicloud.com",
 		`{"apiKey":"callback-key-42","userName":"tester","userId":"u-1"}`)

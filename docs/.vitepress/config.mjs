@@ -12,6 +12,7 @@ export default defineConfig({
       { text: "API 参考", link: "/api/" },
       { text: "SDK 参考", link: "/reference/sdk" },
       { text: "CLI 参考", link: "/cli/" },
+      { text: "SKILL 参考", link: "/skill/" },
     ],
     sidebar: [
       {
@@ -28,6 +29,14 @@ export default defineConfig({
           { text: "文件操作", link: "/guide/files" },
           { text: "交互式终端与 Git", link: "/guide/terminal-and-git" },
           { text: "生命周期", link: "/guide/lifecycle" },
+        ],
+      },
+      {
+        text: "最佳实践",
+        items: [
+          { text: "兼容E2B生态", link: "/best-practices/e2b" },
+          { text: "沙箱运行代码并浏览器预览", link: "/best-practices/base-web-demo" },
+          { text: "OpenCode模板沙箱创作个人网站", link: "/best-practices/opencode-web-demo" },
         ],
       },
       {
@@ -60,6 +69,12 @@ export default defineConfig({
           { text: "登录与认证", link: "/cli/authentication" },
           { text: "模板", link: "/cli/templates" },
           { text: "沙箱管理", link: "/cli/sandboxes" },
+        ],
+      },
+      {
+        text: "SKILL 参考",
+        items: [
+          { text: "AI Agent Skill", link: "/skill/" },
         ],
       },
       {

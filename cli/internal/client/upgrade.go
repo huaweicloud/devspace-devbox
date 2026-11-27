@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package client
 
 import (
@@ -23,6 +27,9 @@ func installCommands() string {
 		return fmt.Sprintf("  # GitHub\n  irm %s | iex\n\n  # GitCode\n  irm %s | iex\n\n  # OBS\n  irm %s | iex",
 			githubInstallPs, gitcodeInstallPs, obsInstallPs)
 	}
-	return fmt.Sprintf("  # GitHub\n  curl -fsSL %s | bash\n\n  # GitCode\n  curl -fsSL %s | bash\n\n  # OBS\n  curl -fsSL %s | bash",
+	return fmt.Sprintf(
+		"  # GitHub\n  curl -fsSL %s | bash\n\n"+
+			"  # GitCode\n  curl -fsSL %s | bash\n\n"+
+			"  # OBS\n  curl -fsSL %s | bash",
 		githubInstallSh, gitcodeInstallSh, obsInstallSh)
 }

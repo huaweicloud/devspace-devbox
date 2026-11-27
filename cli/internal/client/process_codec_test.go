@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package client
 
 import (
@@ -21,7 +25,9 @@ func TestNewProcessClientUsesJSONCodec(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	pc, err := NewProcessClient(SandboxConnection{Domain: srv.URL, SandboxID: "sbx_test", ConnectToken: "token", User: "dev"}, nil)
+	pc, err := NewProcessClient(SandboxConnection{
+		Domain: srv.URL, SandboxID: "sbx_test", ConnectToken: "token", User: "dev",
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewProcessClient: %v", err)
 	}

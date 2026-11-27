@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package i18n provides minimal Chinese/English message selection for the
 // CLI. The language comes from the DEVBOX_LANG environment variable (a value
 // starting with "zh" selects Chinese); everything else defaults to English.

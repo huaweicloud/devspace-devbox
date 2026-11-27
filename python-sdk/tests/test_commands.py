@@ -32,7 +32,7 @@ def test_command_missing_exit_status_at_deadline(elapsed: float, error: type[Exc
     commands = Commands(unused_transport)
     handle = CommandHandle(1, commands, events(), reconnect_timeout=1)
     with (
-        patch.object(commands, "_start", return_value=handle),
+        patch.object(commands, "start", return_value=handle),
         patch("devbox.commands.time.monotonic", side_effect=[100, 100 + elapsed]),
         pytest.raises(error),
     ):
@@ -49,7 +49,7 @@ def test_background_wait_does_not_infer_timeout_from_elapsed_time() -> None:
     commands = Commands(unused_transport)
     handle = CommandHandle(1, commands, events(), reconnect_timeout=1)
     with (
-        patch.object(commands, "_start", return_value=handle),
+        patch.object(commands, "start", return_value=handle),
         patch("devbox.commands.time.monotonic", side_effect=[100, 110]),
     ):
         pending = commands.run("test", timeout=1, background=True)

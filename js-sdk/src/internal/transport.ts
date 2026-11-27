@@ -1,4 +1,8 @@
-import { Agent, type Dispatcher, fetch } from "undici";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import { Agent, type Dispatcher, fetch } from 'undici';
 import {
   AuthenticationError,
   ConflictError,
@@ -12,9 +16,9 @@ import {
   RequestTimeoutError,
   ServiceUnavailableError,
   ValidationError,
-} from "../errors.js";
-import { VERSION } from "../version.js";
-import { objectValue, optionalString, type WireObject } from "./wire.js";
+} from '../errors.js';
+import { VERSION } from '../version.js';
+import { objectValue, optionalString, type WireObject } from './wire.js';
 
 const RETRY_DELAYS_MS = [100, 200] as const;
 type FetchResponse = Awaited<ReturnType<typeof fetch>>;
@@ -31,7 +35,7 @@ export interface RequestOptions {
 
 interface ResponseValue<T> {
   body: T;
-  headers: FetchResponse["headers"];
+  headers: FetchResponse['headers'];
 }
 
 export class ConnectStream implements AsyncIterable<WireObject> {
@@ -40,7 +44,7 @@ export class ConnectStream implements AsyncIterable<WireObject> {
   readonly #onClose: () => void;
   #closed = false;
 
-  constructor(open: () => Promise<FetchResponse>, onClose: () => void = () => {}) {
+  constructor(open: () => Promise<FetchResponse>, onClose: () => void = (): void => {}) {
     this.#open = open;
     this.#onClose = onClose;
   }
@@ -54,7 +58,9 @@ export class ConnectStream implements AsyncIterable<WireObject> {
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<WireObject> {
-    if (this.#closed) return;
+    if (this.#closed) {
+      return;
+    }
     try {
       yield* this.#read();
     } finally {
@@ -64,24 +70,32 @@ export class ConnectStream implements AsyncIterable<WireObject> {
 
   async *#read(): AsyncGenerator<WireObject> {
     const response = await this.#openWithSignal();
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
-    if (contentType !== "application/connect+json") {
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase();
+    if (contentType !== 'application/connect+json') {
       await response.body?.cancel();
-      throw new ProtocolError("EnvD returned an invalid Connect content type");
+      throw new ProtocolError('EnvD returned an invalid Connect content type');
     }
-    if (!response.body) throw new ProtocolError("EnvD returned an empty Connect stream");
+    if (!response.body) {
+      throw new ProtocolError('EnvD returned an empty Connect stream');
+    }
 
     const decoder = new ConnectDecoder();
     const reader = response.body.getReader();
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        for (const event of decoder.feed(value)) yield event;
+        if (done) {
+          break;
+        }
+        for (const event of decoder.feed(value)) {
+          yield event;
+        }
       }
       decoder.finish();
     } catch (error) {
-      if (this.#closed && isAbort(error)) return;
+      if (this.#closed && isAbort(error)) {
+        return;
+      }
       throw mapTransportError(error);
     } finally {
       try {
@@ -98,7 +112,9 @@ export class ConnectStream implements AsyncIterable<WireObject> {
     try {
       return await this.#open();
     } catch (error) {
-      if (this.#closed && isAbort(error)) throw new RequestTimeoutError("stream was closed");
+      if (this.#closed && isAbort(error)) {
+        throw new RequestTimeoutError('stream was closed');
+      }
       throw mapTransportError(error);
     }
   }
@@ -114,7 +130,7 @@ export class Transport {
   readonly #timeoutMs: number;
   readonly #dispatcher: Dispatcher;
   readonly #ownsDispatcher: boolean;
-  readonly #onResponse?: (headers: FetchResponse["headers"]) => void;
+  readonly #onResponse?: (headers: FetchResponse['headers']) => void;
   readonly #streams = new Set<ConnectStream>();
 
   constructor(
@@ -123,11 +139,11 @@ export class Transport {
       headers?: Record<string, string>;
       timeoutMs?: number;
       dispatcher?: Dispatcher;
-      onResponse?: (headers: FetchResponse["headers"]) => void;
+      onResponse?: (headers: FetchResponse['headers']) => void;
     } = {},
   ) {
-    this.#baseUrl = baseUrl.replace(/\/$/, "");
-    this.#headers = { "User-Agent": `devbox-js-sdk/${VERSION}`, ...options.headers };
+    this.#baseUrl = baseUrl.replace(/\/$/, '');
+    this.#headers = { 'User-Agent': `devbox-js-sdk/${VERSION}`, ...options.headers };
     this.#timeoutMs = options.timeoutMs ?? 30_000;
     this.#dispatcher = options.dispatcher ?? new Agent();
     this.#ownsDispatcher = !options.dispatcher;
@@ -169,9 +185,9 @@ export class Transport {
   }
 
   connectUnary<T = unknown>(path: string, body: unknown): Promise<T> {
-    return this.request("POST", path, {
+    return this.request('POST', path, {
       json: body,
-      headers: { "Connect-Protocol-Version": "1", "Content-Type": "application/json" },
+      headers: { 'Connect-Protocol-Version': '1', 'Content-Type': 'application/json' },
     });
   }
 
@@ -186,22 +202,23 @@ export class Transport {
         const normalizedTimeout = normalizeStreamTimeout(timeoutMs);
         const headers: Record<string, string> = {
           ...this.#headers,
-          "Connect-Protocol-Version": "1",
-          "Content-Type": "application/connect+json",
+          'Connect-Protocol-Version': '1',
+          'Content-Type': 'application/connect+json',
           ...extraHeaders,
         };
-        if (normalizedTimeout !== undefined)
-          headers["Connect-Timeout-Ms"] = String(normalizedTimeout);
+        if (normalizedTimeout !== undefined) {
+          headers['Connect-Timeout-Ms'] = String(normalizedTimeout);
+        }
 
         const signal =
           normalizedTimeout === undefined
             ? stream.signal
             : AbortSignal.any([stream.signal, AbortSignal.timeout(normalizedTimeout)]);
         const response = await fetch(this.#url(path), {
-          method: "POST",
+          method: 'POST',
           headers,
           body: connectFrame(body),
-          redirect: "manual",
+          redirect: 'manual',
           signal,
           dispatcher: this.#dispatcher,
         });
@@ -216,8 +233,10 @@ export class Transport {
   }
 
   async close(): Promise<void> {
-    for (const stream of this.#streams) stream.close();
-    if (this.#ownsDispatcher && "close" in this.#dispatcher) {
+    for (const stream of this.#streams) {
+      stream.close();
+    }
+    if (this.#ownsDispatcher && 'close' in this.#dispatcher) {
       await this.#dispatcher.close();
     }
   }
@@ -232,7 +251,7 @@ export class Transport {
         const headers = { ...this.#headers, ...options.headers };
         let body: Uint8Array | string | undefined;
         if (options.json !== undefined) {
-          headers["Content-Type"] ??= "application/json";
+          headers['Content-Type'] ??= 'application/json';
           body = JSON.stringify(options.json);
         } else {
           body = options.body;
@@ -241,7 +260,7 @@ export class Transport {
           method,
           headers,
           body,
-          redirect: "manual",
+          redirect: 'manual',
           signal: AbortSignal.timeout(this.#timeoutMs),
           dispatcher: this.#dispatcher,
         });
@@ -261,7 +280,9 @@ export class Transport {
   #url(path: string, params?: Query): string {
     const url = new URL(path, `${this.#baseUrl}/`);
     for (const [key, value] of Object.entries(params ?? {})) {
-      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value));
+      }
     }
     return url.toString();
   }
@@ -272,26 +293,32 @@ class ConnectDecoder {
   #ended = false;
 
   feed(chunk: Uint8Array<ArrayBufferLike>): WireObject[] {
-    if (this.#ended && chunk.length > 0)
-      throw new ProtocolError("EnvD sent data after the Connect stream ended");
+    if (this.#ended && chunk.length > 0) {
+      throw new ProtocolError('EnvD sent data after the Connect stream ended');
+    }
     this.#buffer = concat(this.#buffer, chunk);
     const events: WireObject[] = [];
 
     while (this.#buffer.length >= 5) {
       const flags = this.#buffer[0] ?? 0;
       const size = new DataView(this.#buffer.buffer, this.#buffer.byteOffset + 1, 4).getUint32(0);
-      if (this.#buffer.length < size + 5) break;
+      if (this.#buffer.length < size + 5) {
+        break;
+      }
       const data = this.#buffer.slice(5, size + 5);
       this.#buffer = this.#buffer.slice(size + 5);
-      if ((flags & 1) !== 0)
-        throw new ProtocolError("compressed Connect messages are not supported");
+      if ((flags & 1) !== 0) {
+        throw new ProtocolError('compressed Connect messages are not supported');
+      }
       const payload = decodeObject(data);
       if ((flags & 2) !== 0) {
         this.#ended = true;
-        if (payload.error && typeof payload.error === "object")
+        if (payload.error && typeof payload.error === 'object') {
           raiseConnectError(objectValue(payload.error));
-        if (this.#buffer.length > 0)
-          throw new ProtocolError("EnvD sent data after the Connect stream ended");
+        }
+        if (this.#buffer.length > 0) {
+          throw new ProtocolError('EnvD sent data after the Connect stream ended');
+        }
         break;
       }
       events.push(payload);
@@ -300,28 +327,37 @@ class ConnectDecoder {
   }
 
   finish(): void {
-    if (this.#buffer.length > 0)
-      throw new ProtocolError("EnvD returned a truncated Connect stream");
-    if (!this.#ended) throw new ProtocolError("EnvD closed the Connect stream without a trailer");
+    if (this.#buffer.length > 0) {
+      throw new ProtocolError('EnvD returned a truncated Connect stream');
+    }
+    if (!this.#ended) {
+      throw new ProtocolError('EnvD closed the Connect stream without a trailer');
+    }
   }
 }
 
 async function validateResponse(response: FetchResponse): Promise<void> {
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();
-    throw new ProtocolError("DevBox service returned an unexpected redirect");
+    throw new ProtocolError('DevBox service returned an unexpected redirect');
   }
-  if (!response.ok) await raiseForResponse(response);
+  if (!response.ok) {
+    await raiseForResponse(response);
+  }
 }
 
 async function responseBody(response: FetchResponse): Promise<unknown> {
-  if (response.status === 204) return undefined;
+  if (response.status === 204) {
+    return undefined;
+  }
   const text = await response.text();
-  if (!text) return undefined;
+  if (!text) {
+    return undefined;
+  }
   try {
     return JSON.parse(text);
   } catch (cause) {
-    throw new ProtocolError("DevBox returned invalid JSON", { cause });
+    throw new ProtocolError('DevBox returned invalid JSON', { cause });
   }
 }
 
@@ -333,7 +369,7 @@ async function raiseForResponse(response: FetchResponse): Promise<never> {
     // Some gateways return an empty or plain-text error response.
   }
   const raw = payload.error;
-  const error = raw && typeof raw === "object" ? objectValue(raw) : payload;
+  const error = raw && typeof raw === 'object' ? objectValue(raw) : payload;
   const message = String(
     error.message ?? error.error_message ?? `request failed with status ${response.status}`,
   );
@@ -344,16 +380,16 @@ async function raiseForResponse(response: FetchResponse): Promise<never> {
     statusCode: response.status,
     target: optionalString(error.target),
     details,
-    requestId: response.headers.get("x-request-id") ?? undefined,
-    retryAfter: retryAfter(response.headers.get("retry-after")),
+    requestId: response.headers.get('x-request-id') ?? undefined,
+    retryAfter: retryAfter(response.headers.get('retry-after')),
   };
   const ErrorType = errorType(response.status);
   throw new ErrorType(message, options);
 }
 
 function raiseConnectError(error: WireObject): never {
-  const code = String(error.code ?? "unknown");
-  const message = String(error.message ?? "EnvD request failed");
+  const code = String(error.code ?? 'unknown');
+  const message = String(error.message ?? 'EnvD request failed');
   const mapping: Record<string, [number, typeof DevBoxError]> = {
     invalid_argument: [400, ValidationError],
     out_of_range: [400, ValidationError],
@@ -372,7 +408,9 @@ function raiseConnectError(error: WireObject): never {
 }
 
 function errorType(status: number): typeof DevBoxError {
-  if (status >= 500) return ServiceUnavailableError;
+  if (status >= 500) {
+    return ServiceUnavailableError;
+  }
   return (
     {
       400: ValidationError,
@@ -388,14 +426,18 @@ function errorType(status: number): typeof DevBoxError {
 }
 
 function errorDetails(value: unknown): ErrorDetail[] {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
   return value.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return [];
+    }
     const detail = item as WireObject;
     return [
       {
-        code: String(detail.code ?? ""),
-        message: String(detail.message ?? ""),
+        code: String(detail.code ?? ''),
+        message: String(detail.message ?? ''),
         target: optionalString(detail.target),
       },
     ];
@@ -403,9 +445,13 @@ function errorDetails(value: unknown): ErrorDetail[] {
 }
 
 function retryAfter(value: string | null): number | undefined {
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
   const seconds = Number(value);
-  if (Number.isFinite(seconds)) return seconds;
+  if (Number.isFinite(seconds)) {
+    return seconds;
+  }
   const date = Date.parse(value);
   return Number.isNaN(date) ? undefined : Math.max(0, (date - Date.now()) / 1000);
 }
@@ -422,40 +468,52 @@ function decodeObject(value: Uint8Array): WireObject {
   try {
     return objectValue(
       JSON.parse(new TextDecoder().decode(value)),
-      "EnvD returned an invalid Connect message",
+      'EnvD returned an invalid Connect message',
     );
   } catch (error) {
-    if (error instanceof DevBoxError) throw error;
-    throw new ProtocolError("EnvD returned invalid Connect JSON", { cause: error });
+    if (error instanceof DevBoxError) {
+      throw error;
+    }
+    throw new ProtocolError('EnvD returned invalid Connect JSON', { cause: error });
   }
 }
 
 function normalizeStreamTimeout(value?: number): number | undefined {
-  if (value === undefined || value === 0) return undefined;
-  if (value < 0) throw new RangeError("timeoutMs must be non-negative");
+  if (value === undefined || value === 0) {
+    return undefined;
+  }
+  if (value < 0) {
+    throw new RangeError('timeoutMs must be non-negative');
+  }
   return Math.max(1, Math.round(value));
 }
 
 function mapTransportError(error: unknown): Error {
-  if (error instanceof DevBoxError) return error;
-  if (isAbort(error)) return new RequestTimeoutError("request timed out", { cause: error });
+  if (error instanceof DevBoxError) {
+    return error;
+  }
+  if (isAbort(error)) {
+    return new RequestTimeoutError('request timed out', { cause: error });
+  }
   if (error instanceof Error) {
     const detail = error.cause instanceof Error ? error.cause.message : error.message;
     return new ServiceUnavailableError(`DevBox transport failed (${error.name}): ${detail}`, {
       cause: error,
     });
   }
-  return new ServiceUnavailableError("unable to reach DevBox service");
+  return new ServiceUnavailableError('unable to reach DevBox service');
 }
 
 function isAbort(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
 }
 
 function isConnectionError(error: unknown): boolean {
-  if (!(error instanceof TypeError)) return false;
+  if (!(error instanceof TypeError)) {
+    return false;
+  }
   const cause = error.cause as NodeJS.ErrnoException | undefined;
-  return ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(cause?.code ?? "");
+  return ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'].includes(cause?.code ?? '');
 }
 
 function concat(left: Uint8Array, right: Uint8Array): Uint8Array {

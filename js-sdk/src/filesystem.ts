@@ -1,10 +1,14 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { NotFoundError, ProtocolError } from "./errors.js";
-import type { Transport } from "./internal/transport.js";
-import { objectValue, type WireObject } from "./internal/wire.js";
-import { type FileInfo, type FileWatchEvent, parseFileInfo } from "./models.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
 
-const FILESYSTEM = "/filesystem.Filesystem";
+import { readFile, writeFile } from 'node:fs/promises';
+import { NotFoundError, ProtocolError } from './errors.js';
+import type { Transport } from './internal/transport.js';
+import { objectValue, type WireObject } from './internal/wire.js';
+import { type FileInfo, type FileWatchEvent, parseFileInfo } from './models.js';
+
+const FILESYSTEM = '/filesystem.Filesystem';
 type TransportProvider = () => Promise<Transport>;
 
 /** Options for {@link Filesystem.write}. */
@@ -31,13 +35,13 @@ export class Filesystem {
 
   /** Reads a file as raw bytes. */
   async readBytes(path: string): Promise<Uint8Array> {
-    return (await this.#transport()).requestBytes("GET", "/files", {
+    return (await this.#transport()).requestBytes('GET', '/files', {
       params: { path: sandboxPath(path) },
     });
   }
 
   /** Reads a file and decodes it with the given encoding (default utf8). */
-  async read(path: string, encoding: BufferEncoding = "utf8"): Promise<string> {
+  async read(path: string, encoding: BufferEncoding = 'utf8'): Promise<string> {
     return Buffer.from(await this.readBytes(path)).toString(encoding);
   }
 
@@ -47,11 +51,11 @@ export class Filesystem {
     data: string | Uint8Array,
     options: WriteFileOptions = {},
   ): Promise<FileInfo> {
-    const body = typeof data === "string" ? Buffer.from(data, options.encoding ?? "utf8") : data;
-    const payload = await (await this.#transport()).request("POST", "/files", {
+    const body = typeof data === 'string' ? Buffer.from(data, options.encoding ?? 'utf8') : data;
+    const payload = await (await this.#transport()).request('POST', '/files', {
       body,
       params: { path: sandboxPath(path) },
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: { 'Content-Type': 'application/octet-stream' },
     });
     return parseFileInfo(firstItem(payload));
   }
@@ -62,21 +66,23 @@ export class Filesystem {
     options: WriteFileOptions = {},
   ): Promise<FileInfo[]> {
     const result: FileInfo[] = [];
-    for (const [path, data] of Object.entries(files))
+    for (const [path, data] of Object.entries(files)) {
       result.push(await this.write(path, data, options));
+    }
     return result;
   }
 
   /** Lists a directory; `options.depth` controls recursion (default 1). */
   async list(path: string, options: ListFilesOptions = {}): Promise<FileInfo[]> {
     const depth = options.depth ?? 1;
-    if (!Number.isInteger(depth) || depth < 1)
-      throw new RangeError("depth must be a positive integer");
+    if (!Number.isInteger(depth) || depth < 1) {
+      throw new RangeError('depth must be a positive integer');
+    }
     const payload = await (await this.#transport()).connectUnary(`${FILESYSTEM}/ListDir`, {
       path: sandboxPath(path),
       depth,
     });
-    return items(payload, "entries").map(parseFileInfo);
+    return items(payload, 'entries').map(parseFileInfo);
   }
 
   /** Returns file/directory metadata for a single path. */
@@ -86,8 +92,9 @@ export class Filesystem {
         path: sandboxPath(path),
       }),
     );
-    if (!payload.entry || typeof payload.entry !== "object")
-      throw new ProtocolError("filesystem response does not contain an entry");
+    if (!payload.entry || typeof payload.entry !== 'object') {
+      throw new ProtocolError('filesystem response does not contain an entry');
+    }
     return parseFileInfo(objectValue(payload.entry));
   }
 
@@ -97,7 +104,9 @@ export class Filesystem {
       await this.stat(path);
       return true;
     } catch (error) {
-      if (error instanceof NotFoundError) return false;
+      if (error instanceof NotFoundError) {
+        return false;
+      }
       throw error;
     }
   }
@@ -153,7 +162,9 @@ export class Filesystem {
     try {
       for await (const response of stream) {
         const event = filesystemEvent(response);
-        if (event) yield event;
+        if (event) {
+          yield event;
+        }
       }
     } finally {
       stream.close();
@@ -162,39 +173,51 @@ export class Filesystem {
 }
 
 function sandboxPath(value: string): string {
-  if (!value?.startsWith("/")) throw new TypeError("sandbox paths must be absolute");
+  if (!value?.startsWith('/')) {
+    throw new TypeError('sandbox paths must be absolute');
+  }
   return value;
 }
 
 function items(value: unknown, key: string): WireObject[] {
-  const source = Array.isArray(value)
-    ? value
-    : value && typeof value === "object"
-      ? objectValue(value)[key]
-      : [];
-  if (!Array.isArray(source)) throw new ProtocolError("filesystem response is invalid");
+  let source: unknown;
+  if (Array.isArray(value)) {
+    source = value;
+  } else if (value && typeof value === 'object') {
+    source = objectValue(value)[key];
+  } else {
+    source = [];
+  }
+  if (!Array.isArray(source)) {
+    throw new ProtocolError('filesystem response is invalid');
+  }
   return source.map((item) => objectValue(item));
 }
 
 function firstItem(value: unknown): WireObject {
-  const values = items(value, "files");
-  if (!values[0]) throw new ProtocolError("file upload response is empty");
+  const values = items(value, 'files');
+  if (!values[0]) {
+    throw new ProtocolError('file upload response is empty');
+  }
   return values[0];
 }
 
 function filesystemEvent(response: WireObject): FileWatchEvent | undefined {
   let value = response.filesystem;
-  if (!value && response.event && typeof response.event === "object")
+  if (!value && response.event && typeof response.event === 'object') {
     value = objectValue(response.event).filesystem;
-  if (!value || typeof value !== "object") return undefined;
+  }
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
   const event = objectValue(value);
   const entry =
-    event.entry && typeof event.entry === "object"
+    event.entry && typeof event.entry === 'object'
       ? parseFileInfo(objectValue(event.entry))
       : undefined;
   return {
-    name: String(event.name ?? ""),
-    type: String(event.type ?? event.operation ?? ""),
+    name: String(event.name ?? ''),
+    type: String(event.type ?? event.operation ?? ''),
     path: event.path === undefined ? undefined : String(event.path),
     entry,
   };

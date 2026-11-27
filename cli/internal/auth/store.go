@@ -1,13 +1,16 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package auth
 
 import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
-
 	"github.com/zalando/go-keyring"
 
+	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 )
 

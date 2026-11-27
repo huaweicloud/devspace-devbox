@@ -1,52 +1,60 @@
-import { Buffer } from "node:buffer";
-import type { MockAgent } from "undici";
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { type CommandHandle, Commands, type RunOptions } from "../src/commands.js";
-import { CommandExitError, ConfigurationError } from "../src/errors.js";
-import { Transport } from "../src/internal/transport.js";
-import type { CommandResult } from "../src/models.js";
-import { Pty } from "../src/pty.js";
-import { connectBody, mockAgent } from "./helpers.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
 
-describe("Commands", () => {
+import { Buffer } from 'node:buffer';
+import type { MockAgent } from 'undici';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { type CommandHandle, Commands, type RunOptions } from '../src/commands.js';
+import { CommandExitError, ConfigurationError } from '../src/errors.js';
+import { Transport } from '../src/internal/transport.js';
+import type { CommandResult } from '../src/models.js';
+import { Pty } from '../src/pty.js';
+import { connectBody, mockAgent } from './helpers.js';
+
+describe('Commands', () => {
   let agent: MockAgent | undefined;
   afterEach(async () => agent?.close());
 
-  it("infers run results for literal and dynamic options", () => {
-    const foreground = (commands: Commands) => commands.run("true");
-    const background = (commands: Commands) => commands.run("true", { background: true });
-    const dynamic = (commands: Commands, options: RunOptions) => commands.run("true", options);
+  it('infers run results for literal and dynamic options', () => {
+    const foreground = (commands: Commands): Promise<CommandResult> => commands.run('true');
+    const background = (commands: Commands): Promise<CommandHandle> =>
+      commands.run('true', { background: true });
+    const dynamic = (
+      commands: Commands,
+      options: RunOptions,
+    ): Promise<CommandResult | CommandHandle> => commands.run('true', options);
 
     expectTypeOf(foreground).returns.toEqualTypeOf<Promise<CommandResult>>();
     expectTypeOf(background).returns.toEqualTypeOf<Promise<CommandHandle>>();
     expectTypeOf(dynamic).returns.toEqualTypeOf<Promise<CommandResult | CommandHandle>>();
   });
 
-  it.each(["", " nobody", "user:name"])(
-    "rejects invalid user %j before starting a process",
+  it.each(['', ' nobody', 'user:name'])(
+    'rejects invalid user %j before starting a process',
     async (user) => {
       const provide = vi.fn(async (): Promise<Transport> => {
-        throw new Error("unexpected transport");
+        throw new Error('unexpected transport');
       });
       const commands = new Commands(provide);
-      await expect(commands.run("id", { user })).rejects.toBeInstanceOf(ConfigurationError);
-      await expect(new Pty(commands, provide).start("/bin/bash", { user })).rejects.toBeInstanceOf(
+      await expect(commands.run('id', { user })).rejects.toBeInstanceOf(ConfigurationError);
+      await expect(new Pty(commands, provide).start('/bin/bash', { user })).rejects.toBeInstanceOf(
         ConfigurationError,
       );
       expect(provide).not.toHaveBeenCalled();
     },
   );
 
-  it.each([undefined, { LANG: "C", TERM: "dumb" }])(
-    "does not force a terminal locale",
+  it.each([undefined, { LANG: 'C', TERM: 'dumb' }])(
+    'does not force a terminal locale',
     async (envs) => {
       agent = mockAgent();
       agent
-        .get("https://runtime.example.test")
+        .get('https://runtime.example.test')
         .intercept({
-          path: "/process.Process/Start",
-          method: "POST",
-          headers: { authorization: "Basic bm9ib2R5Og==" },
+          path: '/process.Process/Start',
+          method: 'POST',
+          headers: { authorization: 'Basic bm9ib2R5Og==' },
         })
         .reply(({ body }) => {
           const payload = JSON.parse(
@@ -54,7 +62,7 @@ describe("Commands", () => {
               .subarray(5)
               .toString(),
           );
-          expect(payload.process.envs).toEqual({ TERM: "xterm-256color", ...envs });
+          expect(payload.process.envs).toEqual({ TERM: 'xterm-256color', ...envs });
           return {
             statusCode: 200,
             data: connectBody(
@@ -62,15 +70,15 @@ describe("Commands", () => {
               { value: { event: { end: { exitCode: 0 } } } },
               { value: {}, trailer: true },
             ),
-            responseOptions: { headers: { "Content-Type": "application/connect+json" } },
+            responseOptions: { headers: { 'Content-Type': 'application/connect+json' } },
           };
         });
-      const transport = new Transport("https://runtime.example.test", { dispatcher: agent });
+      const transport = new Transport('https://runtime.example.test', { dispatcher: agent });
       try {
-        const provide = async () => transport;
-        const session = await new Pty(new Commands(provide), provide).start("/bin/bash", {
+        const provide = async (): Promise<Transport> => transport;
+        const session = await new Pty(new Commands(provide), provide).start('/bin/bash', {
           envs,
-          user: "nobody",
+          user: 'nobody',
         });
         expect((await session.wait()).exitCode).toBe(0);
       } finally {
@@ -79,14 +87,14 @@ describe("Commands", () => {
     },
   );
 
-  it("collects stdout and stderr from the same event", async () => {
+  it('collects stdout and stderr from the same event', async () => {
     agent = mockAgent();
     agent
-      .get("https://runtime.example.test")
+      .get('https://runtime.example.test')
       .intercept({
-        path: "/process.Process/Start",
-        method: "POST",
-        headers: { authorization: "Basic bm9ib2R5Og==" },
+        path: '/process.Process/Start',
+        method: 'POST',
+        headers: { authorization: 'Basic bm9ib2R5Og==' },
       })
       .reply(
         200,
@@ -96,8 +104,8 @@ describe("Commands", () => {
             value: {
               event: {
                 data: {
-                  stdout: Buffer.from("out").toString("base64"),
-                  stderr: Buffer.from("err").toString("base64"),
+                  stdout: Buffer.from('out').toString('base64'),
+                  stderr: Buffer.from('err').toString('base64'),
                 },
               },
             },
@@ -105,21 +113,21 @@ describe("Commands", () => {
           { value: { event: { end: { exitCode: 0 } } } },
           { value: {}, trailer: true },
         ),
-        { headers: { "Content-Type": "application/connect+json" } },
+        { headers: { 'Content-Type': 'application/connect+json' } },
       );
-    const transport = new Transport("https://runtime.example.test", { dispatcher: agent });
+    const transport = new Transport('https://runtime.example.test', { dispatcher: agent });
     const commands = new Commands(async () => transport);
     const stdout = vi.fn();
-    const result = await commands.run("echo test", { onStdout: stdout, user: "nobody" });
-    expect(result).toEqual({ exitCode: 0, stdout: "out", stderr: "err", pid: 42 });
-    expect(stdout).toHaveBeenCalledWith("out");
+    const result = await commands.run('echo test', { onStdout: stdout, user: 'nobody' });
+    expect(result).toEqual({ exitCode: 0, stdout: 'out', stderr: 'err', pid: 42 });
+    expect(stdout).toHaveBeenCalledWith('out');
   });
 
-  it("raises CommandExitError when check is enabled", async () => {
+  it('raises CommandExitError when check is enabled', async () => {
     agent = mockAgent();
     agent
-      .get("https://runtime.example.test")
-      .intercept({ path: "/process.Process/Start", method: "POST" })
+      .get('https://runtime.example.test')
+      .intercept({ path: '/process.Process/Start', method: 'POST' })
       .reply(
         200,
         connectBody(
@@ -127,19 +135,19 @@ describe("Commands", () => {
           { value: { event: { end: { exitCode: 7 } } } },
           { value: {}, trailer: true },
         ),
-        { headers: { "Content-Type": "application/connect+json" } },
+        { headers: { 'Content-Type': 'application/connect+json' } },
       );
-    const transport = new Transport("https://runtime.example.test", { dispatcher: agent });
-    await expect(new Commands(async () => transport).run("false")).rejects.toBeInstanceOf(
+    const transport = new Transport('https://runtime.example.test', { dispatcher: agent });
+    await expect(new Commands(async () => transport).run('false')).rejects.toBeInstanceOf(
       CommandExitError,
     );
   });
 
-  it("rejects process control after completion", async () => {
+  it('rejects process control after completion', async () => {
     agent = mockAgent();
     agent
-      .get("https://runtime.example.test")
-      .intercept({ path: "/process.Process/Start", method: "POST" })
+      .get('https://runtime.example.test')
+      .intercept({ path: '/process.Process/Start', method: 'POST' })
       .reply(
         200,
         connectBody(
@@ -147,11 +155,11 @@ describe("Commands", () => {
           { value: { event: { end: { exitCode: 0 } } } },
           { value: {}, trailer: true },
         ),
-        { headers: { "Content-Type": "application/connect+json" } },
+        { headers: { 'Content-Type': 'application/connect+json' } },
       );
-    const transport = new Transport("https://runtime.example.test", { dispatcher: agent });
-    const process = await new Commands(async () => transport).run("true", { background: true });
+    const transport = new Transport('https://runtime.example.test', { dispatcher: agent });
+    const process = await new Commands(async () => transport).run('true', { background: true });
     await process.wait();
-    await expect(process.sendStdin("late")).rejects.toThrow("process has already completed");
+    await expect(process.sendStdin('late')).rejects.toThrow('process has already completed');
   });
 });

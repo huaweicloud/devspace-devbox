@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package client is a thin, hand-reviewed wrapper around the generated
 // client (internal/api). It centralizes authentication, error
 // decoding and pagination meta-headers so that the CLI layers stay focused on
@@ -101,11 +105,18 @@ func (e *UpgradeRequiredError) Error() string {
 	return fmt.Sprintf("\n%s\n%s\n%s\n", msg, i18n.T(i18n.Msg.Client.UpdateLabel), installCommands())
 }
 
+// DefaultHTTPTimeout is the default Manager API timeout. It is also the
+// fallback when the caller provides no http.Client.
+const DefaultHTTPTimeout = 30 * time.Second
+
+// maxErrorExcerpt bounds the error excerpt echoed for non-JSON bodies.
+const maxErrorExcerpt = 512
+
 // New builds a Client authenticated against the given server. An empty
 // apiKey skips the auth header.
 func New(server, apiKey string, httpClient *http.Client) (*Client, error) {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = &http.Client{Timeout: DefaultHTTPTimeout}
 	}
 	if httpClient.Transport == nil {
 		httpClient.Transport = http.DefaultTransport
@@ -145,7 +156,7 @@ func New(server, apiKey string, httpClient *http.Client) (*Client, error) {
 // checkStatus returns an *APIError derived from the DevBox error schema when
 // the HTTP response is not a 2xx. A 426 response maps to UpgradeRequiredError.
 func checkStatus(resp *http.Response, body []byte) error {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
 
@@ -161,8 +172,8 @@ func checkStatus(resp *http.Response, body []byte) error {
 	}
 	// Non-JSON or unexpected body: echo a trimmed excerpt for debuggability.
 	msg = strings.TrimSpace(string(body))
-	if len(msg) > 512 {
-		msg = msg[:512] + "..."
+	if len(msg) > maxErrorExcerpt {
+		msg = msg[:maxErrorExcerpt] + "..."
 	}
 	apiErr.Message = i18n.T(i18n.Msg.Client.ErrorResponsePrefix) + msg
 	return apiErr

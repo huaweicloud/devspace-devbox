@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package client
 
 import (
@@ -29,34 +33,46 @@ type loggingTransport struct {
 }
 
 func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if slog.Default().Enabled(req.Context(), slog.LevelDebug) {
-		attrs := []any{
-			"method", req.Method,
-			"url", req.URL.String(),
-		}
-		if req.Body != nil && req.ContentLength <= maxBodyForLog {
-			if data, err := io.ReadAll(req.Body); err == nil {
-				_ = req.Body.Close()
-				req.Body = io.NopCloser(bytes.NewReader(data))
-				if len(data) > 0 {
-					attrs = append(attrs, "body", truncateBody(maskSensitiveKeys(string(data)), len(data)))
-				}
-			}
-		} else if req.Body != nil {
-			attrs = append(attrs, "body", fmt.Sprintf("<omitted: %d bytes>", req.ContentLength))
-		}
-		if key := req.Header.Get(headerAPIKey); key != "" {
-			attrs = append(attrs, "x_api_key", mask.Key(key))
-		}
-		slog.DebugContext(req.Context(), "devbox api request", attrs...)
-	}
-
 	start := time.Now()
+	t.logRequest(req)
 	resp, err := t.base.RoundTrip(req)
-	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
-		return resp, err
-	}
+	t.logResponse(req, resp, start, err)
+	return resp, err
+}
 
+// logRequest emits the debug log for an outgoing request, buffering small
+// bodies so the round trip still sees the full payload.
+func (t *loggingTransport) logRequest(req *http.Request) {
+	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
+		return
+	}
+	attrs := []any{
+		"method", req.Method,
+		"url", req.URL.String(),
+	}
+	if req.Body != nil && req.ContentLength <= maxBodyForLog {
+		if data, err := io.ReadAll(req.Body); err == nil {
+			_ = req.Body.Close()
+			req.Body = io.NopCloser(bytes.NewReader(data))
+			if len(data) > 0 {
+				attrs = append(attrs, "body", truncateBody(maskSensitiveKeys(string(data)), len(data)))
+			}
+		}
+	} else if req.Body != nil {
+		attrs = append(attrs, "body", fmt.Sprintf("<omitted: %d bytes>", req.ContentLength))
+	}
+	if key := req.Header.Get(headerAPIKey); key != "" {
+		attrs = append(attrs, "x_api_key", mask.Key(key))
+	}
+	slog.DebugContext(req.Context(), "devbox api request", attrs...)
+}
+
+// logResponse emits the debug log for a completed round trip, buffering small
+// response bodies so the caller still sees the full payload.
+func (t *loggingTransport) logResponse(req *http.Request, resp *http.Response, start time.Time, err error) {
+	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
+		return
+	}
 	attrs := []any{
 		"method", req.Method,
 		"url", req.URL.String(),
@@ -67,7 +83,7 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	if err != nil {
 		slog.DebugContext(req.Context(), "devbox api request failed", append(attrs, "error", err)...)
-		return resp, err
+		return
 	}
 
 	if resp.Body != nil && resp.ContentLength <= maxBodyForLog {
@@ -88,7 +104,6 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			"status", resp.StatusCode,
 			"content_length", resp.ContentLength,
 		)...)
-	return resp, err
 }
 
 // truncateBody bounds a body string for the debug log.
@@ -128,16 +143,7 @@ func maskSensitiveKeys(body string) string {
 func maskJSONValue(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
-		for k, item := range t {
-			if _, sensitive := sensitiveBodyKeys[k]; sensitive {
-				if s, ok := item.(string); ok && s != "" {
-					t[k] = mask.Key(s)
-				}
-				continue
-			}
-			t[k] = maskJSONValue(item)
-		}
-		return t
+		return maskJSONMap(t)
 	case []any:
 		for i, item := range t {
 			t[i] = maskJSONValue(item)
@@ -146,4 +152,19 @@ func maskJSONValue(v any) any {
 	default:
 		return v
 	}
+}
+
+// maskJSONMap masks sensitive string values of a decoded JSON object and
+// recurses into nested containers.
+func maskJSONMap(m map[string]any) map[string]any {
+	for k, item := range m {
+		if _, sensitive := sensitiveBodyKeys[k]; sensitive {
+			if s, ok := item.(string); ok && s != "" {
+				m[k] = mask.Key(s)
+			}
+			continue
+		}
+		m[k] = maskJSONValue(item)
+	}
+	return m
 }

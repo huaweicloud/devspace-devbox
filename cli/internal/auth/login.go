@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package auth implements credential storage, validation and browser-based
 // login for the devbox CLI.
 //
@@ -33,6 +37,10 @@ const (
 	// LoginTimeout bounds how long [*LoginSession.Wait] blocks for the browser
 	// callback.
 	LoginTimeout = 5 * time.Minute
+
+	// maxCallbackBody bounds the callback request body size (8 KiB is
+	// generous for a JSON payload of apiKey/userName/userId).
+	maxCallbackBody = 8192
 )
 
 // Credential is the stored authentication material.
@@ -166,6 +174,27 @@ func (s *LoginSession) Close() {
 	}
 }
 
+// rejectCallback answers a failed callback with HTTP 400 and the localized
+// message, then reports the cause to the session error channel.
+func (s *LoginSession) rejectCallback(w http.ResponseWriter, message string, cause error) {
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = w.Write([]byte(message))
+	s.errCh <- cause
+}
+
+// resolveAPIKey returns the callback API key, lifting the nested `result`
+// payload (key and account metadata) to the top level when present.
+func resolveAPIKey(cb *callbackBody) string {
+	key := cb.APIKey
+	if key == "" && cb.Result != nil {
+		key = cb.Result.APIKey
+		// The user info may be nested under result; lift it to the top level for the reply.
+		cb.UserName = cb.Result.UserName
+		cb.UserID = cb.Result.UserID
+	}
+	return key
+}
+
 func (s *LoginSession) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Fail closed: only the login page origin may drive this callback. A
 	// browser always attaches Origin on a cross-origin POST, so a missing or
@@ -195,11 +224,9 @@ func (s *LoginSession) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cb callbackBody
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCallbackBody))
 	if err != nil || json.Unmarshal(data, &cb) != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(i18n.T(i18n.Msg.Auth.CallbackBadBody)))
-		s.errCh <- errMissingAPIKey
+		s.rejectCallback(w, i18n.T(i18n.Msg.Auth.CallbackBadBody), errMissingAPIKey)
 		return
 	}
 
@@ -211,24 +238,15 @@ func (s *LoginSession) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// When the login page reports a business error code (eg. the API key limit is
 	// exceeded), direct the user to the API key management page.
 	if cb.ErrorCode != "" && cb.ErrorCode != loginSuccessCode {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(i18n.T(i18n.Msg.Auth.CallbackLoginFail)))
-		s.errCh <- fmt.Errorf(i18n.T(i18n.Msg.Auth.CallbackBizError),
-			cb.ErrorCode, cb.ErrorMsg, apikeyPageURL())
+		s.rejectCallback(w, i18n.T(i18n.Msg.Auth.CallbackLoginFail),
+			fmt.Errorf(i18n.T(i18n.Msg.Auth.CallbackBizError),
+				cb.ErrorCode, cb.ErrorMsg, apikeyPageURL()))
 		return
 	}
 
-	key := cb.APIKey
-	if key == "" && cb.Result != nil {
-		key = cb.Result.APIKey
-		// The user info may be nested under result; lift it to the top level for the reply.
-		cb.UserName = cb.Result.UserName
-		cb.UserID = cb.Result.UserID
-	}
+	key := resolveAPIKey(&cb)
 	if key == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(i18n.T(i18n.Msg.Auth.CallbackMissingKey)))
-		s.errCh <- errMissingAPIKey
+		s.rejectCallback(w, i18n.T(i18n.Msg.Auth.CallbackMissingKey), errMissingAPIKey)
 		return
 	}
 
@@ -256,6 +274,9 @@ func maskBodyKeys(data []byte) string {
 
 // maskJSONKeys masks apiKey values in a decoded JSON object, recursively.
 func maskJSONKeys(m map[string]any) {
+	if m == nil {
+		return
+	}
 	for k, v := range m {
 		if k == "apiKey" {
 			if s, ok := v.(string); ok {
@@ -286,8 +307,9 @@ func apikeyPageURL() string {
 	return strings.TrimRight(config.LoginURL, "/") + config.ApikeyPagePath
 }
 
-// BrowserLogin opens the login page, waits for the API key callback and stores the credentials after verification. Both the login page
-// and the check address come from the build-time config (config.LoginURL / config.DefaultServer).
+// BrowserLogin opens the login page, waits for the API key callback and stores
+// the credentials after verification. Both the login page and the check address
+// come from the build-time config (config.LoginURL / config.DefaultServer).
 func BrowserLogin(ctx context.Context) error {
 	loginBase := config.LoginURL
 	if loginBase == "" {

@@ -1,5 +1,9 @@
-import { Buffer } from "node:buffer";
-import { MockAgent } from "undici";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import { Buffer } from 'node:buffer';
+import { MockAgent } from 'undici';
 
 export function mockAgent(): MockAgent {
   const agent = new MockAgent();
@@ -21,15 +25,15 @@ export function connectBody(...values: Array<{ value: unknown; trailer?: boolean
 }
 
 export const sandboxResponse = {
-  sandboxID: "sbx-1",
-  templateID: "default",
-  clientID: "client-1",
-  envdVersion: "1.0.0",
-  domain: "runtime.example.test",
-  sandboxProxyDomain: "devbox.example.test",
-  trafficAccessToken: "traffic-token",
-  tunnelId: "aaaadysa",
-  connectToken: "connect-token",
+  sandboxID: 'sbx-1',
+  templateID: 'default',
+  clientID: 'client-1',
+  envdVersion: '1.0.0',
+  domain: 'runtime.example.test',
+  sandboxProxyDomain: 'devbox.example.test',
+  trafficAccessToken: 'traffic-token',
+  tunnelId: 'aaaadysa',
+  connectToken: 'connect-token',
   tokenLifetime: 86_400,
   tokenExpiration: 4_000_000_000,
   tunnelLifetime: 86_400,

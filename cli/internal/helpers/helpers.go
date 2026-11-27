@@ -291,38 +291,51 @@ type ExecOptions struct {
 	Probe     SandboxProbe
 }
 
+// execEventHandler processes one process event for the foreground exec: on
+// the first start frame it starts the signal/stdin forwarders, output frames
+// are forwarded and the final exit code is captured. ended reports whether
+// the event carried the process exit.
+func execEventHandler(
+	ctx context.Context, pc *client.ProcessClient, body *process.ProcessEvent, started *bool, opts ExecOptions,
+) (int32, bool) {
+	switch e := body.GetEvent().(type) {
+	case *process.ProcessEvent_Start:
+		pid := e.Start.GetPid()
+		if *started {
+			return 0, false
+		}
+		*started = true
+		startSignalForwarder(ctx, pc, pid)
+		if opts.Piped {
+			go streamLocalStdin(ctx, pc, pid)
+		}
+	case *process.ProcessEvent_Data:
+		writeProcessEventOutput(e.Data, opts.Stdout, opts.Stderr)
+	case *process.ProcessEvent_End:
+		if e.End.GetError() != "" {
+			_, _ = fmt.Fprintln(opts.Stderr, e.End.GetError())
+		}
+		return e.End.GetExitCode(), true
+	case *process.ProcessEvent_Keepalive:
+	}
+	return 0, false
+}
+
 // ExecForeground runs in the foreground: forwards the remote stdout/stderr locally, waits for the process to exit
 // and returns the remote exit code as the local exit code. A mid-flight stream
 // failure is arbitrated via opts.Probe (see translateSessionError).
 func ExecForeground(ctx context.Context, pc *client.ProcessClient, stream *connect.ServerStreamForClient[process.StartResponse], opts ExecOptions) error {
 	defer func() { _ = stream.Close() }()
 
-	var pid uint32
-	var exitCode int32 = 1
 	started := false
+	exitCode := int32(1)
 	for stream.Receive() {
 		body := stream.Msg().GetEvent()
 		if body == nil {
 			continue
 		}
-		switch e := body.GetEvent().(type) {
-		case *process.ProcessEvent_Start:
-			pid = e.Start.GetPid()
-			if !started {
-				started = true
-				startSignalForwarder(ctx, pc, pid)
-				if opts.Piped {
-					go streamLocalStdin(ctx, pc, pid)
-				}
-			}
-		case *process.ProcessEvent_Data:
-			writeProcessEventOutput(e.Data, opts.Stdout, opts.Stderr)
-		case *process.ProcessEvent_End:
-			exitCode = e.End.GetExitCode()
-			if e.End.GetError() != "" {
-				_, _ = fmt.Fprintln(opts.Stderr, e.End.GetError())
-			}
-		case *process.ProcessEvent_Keepalive:
+		if code, ended := execEventHandler(ctx, pc, body, &started, opts); ended {
+			exitCode = code
 		}
 	}
 	if err := stream.Err(); err != nil {
@@ -384,15 +397,8 @@ func streamLocalStdin(ctx context.Context, pc *client.ProcessClient, pid uint32)
 	buf := make([]byte, 64*1024)
 	for {
 		n, readErr := os.Stdin.Read(buf)
-		if n > 0 {
-			if err := pc.SendInput(ctx, pid, buf[:n]); err != nil {
-				if client.IsNotFound(err) {
-					_, _ = fmt.Fprintln(os.Stderr, i18n.T(i18n.Msg.Sandbox.StdinAfterExit))
-				} else {
-					_, _ = fmt.Fprintf(os.Stderr, i18n.T(i18n.Msg.Sandbox.StdinForwardFailed)+"\n", err)
-				}
-				return
-			}
+		if n > 0 && !sendStdinChunk(ctx, pc, pid, buf[:n]) {
+			return
 		}
 		if readErr != nil {
 			break
@@ -401,6 +407,22 @@ func streamLocalStdin(ctx context.Context, pc *client.ProcessClient, pid uint32)
 	if err := pc.CloseStdin(ctx, pid); err != nil && !client.IsNotFound(err) {
 		_, _ = fmt.Fprintf(os.Stderr, i18n.T(i18n.Msg.Sandbox.CloseStdinFailed)+"\n", err)
 	}
+}
+
+// sendStdinChunk forwards one stdin chunk to the remote process, reporting a
+// failure on stderr; it returns false when forwarding must stop (the remote
+// process is gone or the send failed for another reason).
+func sendStdinChunk(ctx context.Context, pc *client.ProcessClient, pid uint32, chunk []byte) bool {
+	err := pc.SendInput(ctx, pid, chunk)
+	if err == nil {
+		return true
+	}
+	if client.IsNotFound(err) {
+		_, _ = fmt.Fprintln(os.Stderr, i18n.T(i18n.Msg.Sandbox.StdinAfterExit))
+	} else {
+		_, _ = fmt.Fprintf(os.Stderr, i18n.T(i18n.Msg.Sandbox.StdinForwardFailed)+"\n", err)
+	}
+	return false
 }
 
 // writeProcessEventOutput writes the remote output frames to the local stdout/stderr.

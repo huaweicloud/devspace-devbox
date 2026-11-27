@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package process holds the generated ConnectRPC client for the sandbox-local
 // (envd) process API. process.proto is the source of truth; the generated Go
 // code lives next to it. Regenerate with:

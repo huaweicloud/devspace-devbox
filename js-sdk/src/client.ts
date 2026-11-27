@@ -1,7 +1,11 @@
-import { type DevBoxOptions, resolveConfig } from "./config.js";
-import type { Transport } from "./internal/transport.js";
-import { contextFrom, controlTransport, Sandboxes } from "./sandbox.js";
-import { Templates } from "./templates.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import { type DevBoxOptions, resolveConfig } from './config.js';
+import type { Transport } from './internal/transport.js';
+import { contextFrom, controlTransport, Sandboxes } from './sandbox.js';
+import { Templates } from './templates.js';
 
 /**
  * Entry point of the SDK. Owns the control-plane transport and exposes the

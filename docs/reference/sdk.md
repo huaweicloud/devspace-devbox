@@ -60,7 +60,7 @@ const page = await client.sandboxes.list({ template: "default", limit: 1000 });
 | `lifecycle` | 到期销毁或暂停，是否允许自动恢复 |
 | `network` | Python `{"allow_public_traffic": false}` / JS `{ allowPublicTraffic: false }`，要求应用端口访问携带[连接凭证](../api/sandboxes.md#application-port)；省略时允许匿名访问应用端口 |
 
-沙箱存活时间支持 1～86400 秒。`lifecycle.on_timeout` / `onTimeout` 为 `"kill"` 或 `"pause"`；`auto_resume` / `autoResume` 仅在到期暂停时启用。运行中的 `connect(timeout=...)` 只延长、不缩短期限；恢复时从恢复成功开始计算新期限。
+沙箱存活时间支持 10–86400 秒。`lifecycle.on_timeout` / `onTimeout` 为 `"kill"` 或 `"pause"`；`auto_resume` / `autoResume` 仅在到期暂停时启用。运行中的 `connect(timeout=...)` 只延长、不缩短期限；恢复时从恢复成功开始计算新期限。
 
 示例与行为说明见[快速入门](../index.md#创建并使用沙箱)和[生命周期](../guide/lifecycle.md)。
 

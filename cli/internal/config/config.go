@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package config resolves the CLI configuration for the DevBox Sandbox
 // Manager.
 //
@@ -56,16 +60,16 @@ const (
 
 // Path returns the absolute path of the config file (for display).
 func Path() (string, error) {
-	dir, err := ConfigDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, configFileName), nil
 }
 
-// ConfigDir returns the devbox config directory (~/.huawei/devbox),
+// Dir returns the devbox config directory (~/.huawei/devbox),
 // aligned with the shared dot-directory layout.
-func ConfigDir() (string, error) {
+func Dir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf(i18n.T(i18n.Msg.Config.ResolveHomeFailed), err)
@@ -133,13 +137,21 @@ func readPersisted() (map[string]any, error) {
 	return values, nil
 }
 
+// configDirPerm and configFilePerm are the filesystem permissions for the
+// config directory and file. The directory is owner-only; the file is
+// owner-only because it may contain API keys.
+const (
+	configDirPerm  os.FileMode = 0o700
+	configFilePerm os.FileMode = 0o600
+)
+
 // writePersisted stores `values` as compact, sorted JSON in the config file.
 func writePersisted(values map[string]any) error {
-	dir, err := ConfigDir()
+	dir, err := Dir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, configDirPerm); err != nil {
 		return fmt.Errorf(i18n.T(i18n.Msg.Config.CreateConfigDirFailed), err)
 	}
 
@@ -180,7 +192,7 @@ func writePersisted(values map[string]any) error {
 // write never leaves a truncated config behind.
 func writeFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, configFilePerm); err != nil {
 		return fmt.Errorf(i18n.T(i18n.Msg.Config.WriteConfigFileFailed), err)
 	}
 	if err := os.Rename(tmp, path); err != nil {

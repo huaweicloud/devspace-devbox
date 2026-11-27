@@ -49,10 +49,12 @@ class Sandboxes:
         request_timeout: float = 30.0,
         *,
         gateway_url: str | None = None,
+        owns_control: bool = False,
     ) -> None:
         self._transport = transport
         self._request_timeout = request_timeout
         self._gateway_url = gateway_url
+        self._owns_control = owns_control
 
     def create(
         self,
@@ -89,6 +91,7 @@ class Sandboxes:
             connection,
             request_timeout=self._request_timeout,
             gateway_url=self._gateway_url,
+            owns_control=self._owns_control,
         )
 
     def connect(self, sandbox_id: str, *, timeout: int = 300) -> Sandbox:
@@ -105,6 +108,7 @@ class Sandboxes:
             connection,
             request_timeout=self._request_timeout,
             gateway_url=self._gateway_url,
+            owns_control=self._owns_control,
         )
 
     def get(self, sandbox_id: str) -> SandboxInfo:
@@ -162,10 +166,12 @@ class AsyncSandboxes:
         request_timeout: float = 30.0,
         *,
         gateway_url: str | None = None,
+        owns_control: bool = False,
     ) -> None:
         self._transport = transport
         self._request_timeout = request_timeout
         self._gateway_url = gateway_url
+        self._owns_control = owns_control
 
     async def create(
         self,
@@ -202,6 +208,7 @@ class AsyncSandboxes:
             connection,
             request_timeout=self._request_timeout,
             gateway_url=self._gateway_url,
+            owns_control=self._owns_control,
         )
 
     async def connect(self, sandbox_id: str, *, timeout: int = 300) -> AsyncSandbox:
@@ -218,6 +225,7 @@ class AsyncSandboxes:
             connection,
             request_timeout=self._request_timeout,
             gateway_url=self._gateway_url,
+            owns_control=self._owns_control,
         )
 
     async def get(self, sandbox_id: str) -> SandboxInfo:
@@ -306,6 +314,37 @@ class Sandbox:
         self.git = Git(self.commands)
         self.envd = Envd(self._gateway_transport)
 
+    def __enter__(self) -> Sandbox:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        try:
+            self.kill()
+        except DevBoxError:
+            if exc_type is None:
+                raise
+        finally:
+            self.close()
+
+    @property
+    def sandbox_id(self) -> str:
+        """The sandbox ID of this handle."""
+        return self._info.sandbox_id
+
+    @property
+    def info(self) -> SandboxInfo:
+        """Cached sandbox info (refreshed by :meth:`get_info`)."""
+        return self._info
+
+    @property
+    def envd_url(self) -> str:
+        return _gateway_url(self._connection, self._gateway_url_override)
+
     @classmethod
     def create(
         cls,
@@ -336,6 +375,7 @@ class Sandbox:
                 transport,
                 config.request_timeout,
                 gateway_url=config.gateway_url,
+                owns_control=True,
             ).create(
                 template,
                 timeout=timeout,
@@ -348,7 +388,6 @@ class Sandbox:
         except BaseException:
             transport.close()
             raise
-        sandbox._owns_control = True
         return sandbox
 
     @classmethod
@@ -376,26 +415,12 @@ class Sandbox:
                 transport,
                 config.request_timeout,
                 gateway_url=config.gateway_url,
+                owns_control=True,
             ).connect(sandbox_id, timeout=timeout)
         except BaseException:
             transport.close()
             raise
-        sandbox._owns_control = True
         return sandbox
-
-    @property
-    def sandbox_id(self) -> str:
-        """The sandbox ID of this handle."""
-        return self._info.sandbox_id
-
-    @property
-    def info(self) -> SandboxInfo:
-        """Cached sandbox info (refreshed by :meth:`get_info`)."""
-        return self._info
-
-    @property
-    def envd_url(self) -> str:
-        return _gateway_url(self._connection, self._gateway_url_override)
 
     def get_info(self) -> SandboxInfo:
         """Fetch the latest sandbox state from the Manager."""
@@ -488,23 +513,6 @@ class Sandbox:
         self._close_gateway()
         if self._owns_control:
             self._control.close()
-
-    def __enter__(self) -> Sandbox:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        try:
-            self.kill()
-        except DevBoxError:
-            if exc_type is None:
-                raise
-        finally:
-            self.close()
 
     def _gateway_transport(self) -> SyncTransport:
         if self._info.state is SandboxState.PAUSED and not (
@@ -603,6 +611,37 @@ class AsyncSandbox:
         self.git = AsyncGit(self.commands)
         self.envd = AsyncEnvd(self._gateway_transport)
 
+    async def __aenter__(self) -> AsyncSandbox:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        try:
+            await self.kill()
+        except DevBoxError:
+            if exc_type is None:
+                raise
+        finally:
+            await self.close()
+
+    @property
+    def sandbox_id(self) -> str:
+        """The sandbox ID of this handle."""
+        return self._info.sandbox_id
+
+    @property
+    def info(self) -> SandboxInfo:
+        """Cached sandbox info (refreshed by :meth:`get_info`)."""
+        return self._info
+
+    @property
+    def envd_url(self) -> str:
+        return _gateway_url(self._connection, self._gateway_url_override)
+
     @classmethod
     async def create(
         cls,
@@ -633,6 +672,7 @@ class AsyncSandbox:
                 transport,
                 config.request_timeout,
                 gateway_url=config.gateway_url,
+                owns_control=True,
             ).create(
                 template,
                 timeout=timeout,
@@ -645,7 +685,6 @@ class AsyncSandbox:
         except BaseException:
             await transport.close()
             raise
-        sandbox._owns_control = True
         return sandbox
 
     @classmethod
@@ -673,26 +712,12 @@ class AsyncSandbox:
                 transport,
                 config.request_timeout,
                 gateway_url=config.gateway_url,
+                owns_control=True,
             ).connect(sandbox_id, timeout=timeout)
         except BaseException:
             await transport.close()
             raise
-        sandbox._owns_control = True
         return sandbox
-
-    @property
-    def sandbox_id(self) -> str:
-        """The sandbox ID of this handle."""
-        return self._info.sandbox_id
-
-    @property
-    def info(self) -> SandboxInfo:
-        """Cached sandbox info (refreshed by :meth:`get_info`)."""
-        return self._info
-
-    @property
-    def envd_url(self) -> str:
-        return _gateway_url(self._connection, self._gateway_url_override)
 
     async def get_info(self) -> SandboxInfo:
         """Fetch the latest sandbox state from the Manager."""
@@ -781,23 +806,6 @@ class AsyncSandbox:
         await self._close_gateway()
         if self._owns_control:
             await self._control.close()
-
-    async def __aenter__(self) -> AsyncSandbox:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        try:
-            await self.kill()
-        except DevBoxError:
-            if exc_type is None:
-                raise
-        finally:
-            await self.close()
 
     async def _gateway_transport(self) -> AsyncTransport:
         if self._info.state is SandboxState.PAUSED and not (

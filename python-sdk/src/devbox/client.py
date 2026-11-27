@@ -55,10 +55,6 @@ class DevBox:
         )
         self.templates = Templates(self._transport)
 
-    def close(self) -> None:
-        """Closes the shared control-plane transport and idle connections."""
-        self._transport.close()
-
     def __enter__(self) -> DevBox:
         return self
 
@@ -69,6 +65,10 @@ class DevBox:
         traceback: TracebackType | None,
     ) -> None:
         self.close()
+
+    def close(self) -> None:
+        """Closes the shared control-plane transport and idle connections."""
+        self._transport.close()
 
 
 class AsyncDevBox:
@@ -108,10 +108,6 @@ class AsyncDevBox:
         )
         self.templates = AsyncTemplates(self._transport)
 
-    async def close(self) -> None:
-        """Closes the shared control-plane transport and idle connections."""
-        await self._transport.close()
-
     async def __aenter__(self) -> AsyncDevBox:
         return self
 
@@ -122,3 +118,7 @@ class AsyncDevBox:
         traceback: TracebackType | None,
     ) -> None:
         await self.close()
+
+    async def close(self) -> None:
+        """Closes the shared control-plane transport and idle connections."""
+        await self._transport.close()

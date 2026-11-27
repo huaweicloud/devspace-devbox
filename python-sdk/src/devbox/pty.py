@@ -49,7 +49,7 @@ class Pty:
         if cwd:
             process["cwd"] = cwd
         body = {"process": process}
-        return self._commands._start(body, timeout=None, user=user, pty=size, input_stream="pty")
+        return self._commands.start(body, timeout=None, user=user, pty=size, input_stream="pty")
 
     def connect(
         self,
@@ -61,7 +61,7 @@ class Pty:
         return CommandHandle(
             pid,
             self._commands,
-            self._commands._connect_events(pid, timeout),
+            self._commands.connect_events(pid, timeout),
             input_stream="pty",
             reconnect_timeout=timeout,
         )
@@ -111,7 +111,7 @@ class AsyncPty:
         if cwd:
             process["cwd"] = cwd
         body = {"process": process}
-        return await self._commands._start(
+        return await self._commands.start(
             body, timeout=None, user=user, pty=size, input_stream="pty"
         )
 
@@ -125,7 +125,7 @@ class AsyncPty:
         return AsyncCommandHandle(
             pid,
             self._commands,
-            await self._commands._connect_events(pid, timeout),
+            await self._commands.connect_events(pid, timeout),
             input_stream="pty",
             reconnect_timeout=timeout,
         )

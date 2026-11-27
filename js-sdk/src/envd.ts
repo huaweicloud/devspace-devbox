@@ -1,6 +1,10 @@
-import type { Transport } from "./internal/transport.js";
-import { objectValue, stringRecord } from "./internal/wire.js";
-import { type EnvdHealth, type EnvdMetrics, parseEnvdMetrics } from "./models.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import type { Transport } from './internal/transport.js';
+import { objectValue, stringRecord } from './internal/wire.js';
+import { type EnvdHealth, type EnvdMetrics, parseEnvdMetrics } from './models.js';
 
 type TransportProvider = () => Promise<Transport>;
 
@@ -18,7 +22,7 @@ export class Envd {
   /** Returns current CPU, memory and disk usage metrics of the sandbox. */
   async getMetrics(): Promise<EnvdMetrics> {
     return parseEnvdMetrics(
-      objectValue(await (await this.#transport()).request("GET", "/metrics")),
+      objectValue(await (await this.#transport()).request('GET', '/metrics')),
     );
   }
 
@@ -26,15 +30,15 @@ export class Envd {
   async getEnvs(): Promise<Record<string, string>> {
     return stringRecord(
       objectValue(
-        await (await this.#transport()).request("GET", "/envs"),
-        "EnvD returned an invalid envs response",
+        await (await this.#transport()).request('GET', '/envs'),
+        'EnvD returned an invalid envs response',
       ),
     );
   }
 
   /** Returns the envd health info, including the guest envd version. */
   async health(): Promise<EnvdHealth> {
-    const { headers } = await (await this.#transport()).requestWithHeaders("GET", "/health");
-    return { envdVersion: headers.get("x-envd-version") ?? "" };
+    const { headers } = await (await this.#transport()).requestWithHeaders('GET', '/health');
+    return { envdVersion: headers.get('x-envd-version') ?? '' };
   }
 }

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package cmd defines the cobra command tree for the devbox CLI.
 //
 // Each command is a package-level var (eg. loginCmd), registered to its parent via AddCommand in each file's init().
@@ -9,7 +13,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/huaweicloud/devspace-devbox/cli/internal/auth"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/client"
@@ -17,8 +22,6 @@ import (
 	"github.com/huaweicloud/devspace-devbox/cli/internal/helpers"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
-
-	"github.com/spf13/cobra"
 )
 
 // Version is injected via -ldflags "-X .../cmd.Version=...".
@@ -79,7 +82,6 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 `
 
 func init() {
-	client.UserAgent = "devbox-cli/" + Version
 	// Global verbose switch (-v): enables debug logs (including API requests/responses).
 	// After registering -v, cobra's --version flag no longer occupies the -v shorthand.
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, i18n.T(i18n.Msg.Common.FlagVerbose))
@@ -117,7 +119,10 @@ func newClient() (*client.Client, error) {
 	if cred := auth.ReadValidAPIKey(); cred != nil {
 		apiKey = cred.APIKey
 	}
-	return client.New(config.DefaultServer, apiKey, &http.Client{Timeout: 30 * time.Second})
+	// Stamped here (not in init) so the version lands at the single client
+	// construction point, without an init-time cross-package dependency.
+	client.UserAgent = "devbox-cli/" + Version
+	return client.New(config.DefaultServer, apiKey, &http.Client{Timeout: client.DefaultHTTPTimeout})
 }
 
 // out returns the format for the command's --format flag (unregistered or invalid falls back to pretty/text).

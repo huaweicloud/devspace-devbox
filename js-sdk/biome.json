@@ -9,10 +9,18 @@
     "indentWidth": 2,
     "lineWidth": 100
   },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "useBlockStatements": "error"
+      }
     }
   },
   "assist": {

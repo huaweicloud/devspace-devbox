@@ -42,6 +42,12 @@ class SyncTransport:
             event_hooks=event_hooks,
         )
 
+    def __enter__(self) -> SyncTransport:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
     def request(
         self,
         method: str,
@@ -146,12 +152,6 @@ class SyncTransport:
     def update_headers(self, headers: Mapping[str, str]) -> None:
         self._client.headers.update(headers)
 
-    def __enter__(self) -> SyncTransport:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
     def _send(
         self,
         method: str,
@@ -214,6 +214,12 @@ class AsyncTransport:
             verify=verify,
             event_hooks=event_hooks,
         )
+
+    async def __aenter__(self) -> AsyncTransport:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.close()
 
     async def request(
         self,
@@ -300,16 +306,8 @@ class AsyncTransport:
                 headers=request_headers,
                 timeout=network_timeout,
             ) as response:
-                _reject_redirect(response)
-                if response.is_error:
-                    await response.aread()
-                    raise_for_response(response)
-                _validate_connect_response(response)
-                decoder = _ConnectDecoder()
-                async for chunk in response.aiter_bytes():
-                    for event in decoder.feed(chunk):
-                        yield event
-                decoder.finish()
+                async for event in _connect_events(response, _ConnectDecoder()):
+                    yield event
         except Exception as error:
             mapped = transport_error(error)
             if mapped is error:
@@ -321,12 +319,6 @@ class AsyncTransport:
 
     def update_headers(self, headers: Mapping[str, str]) -> None:
         self._client.headers.update(headers)
-
-    async def __aenter__(self) -> AsyncTransport:
-        return self
-
-    async def __aexit__(self, *args: object) -> None:
-        await self.close()
 
     async def _send(
         self,
@@ -363,6 +355,20 @@ class AsyncTransport:
         raise AssertionError("request retry loop did not return")
 
 
+async def _connect_events(
+    response: httpx.Response, decoder: _ConnectDecoder
+) -> AsyncGenerator[Mapping[str, Any], None]:
+    _reject_redirect(response)
+    if response.is_error:
+        await response.aread()
+        raise_for_response(response)
+    _validate_connect_response(response)
+    async for chunk in response.aiter_bytes():
+        for event in decoder.feed(chunk):
+            yield event
+    decoder.finish()
+
+
 def _reject_redirect(response: httpx.Response) -> None:
     if response.is_redirect:
         raise ProtocolError("DevBox service returned an unexpected redirect")
@@ -382,8 +388,9 @@ class _ConnectDecoder:
             size = int.from_bytes(self._buffer[1:5], "big")
             if len(self._buffer) < size + 5:
                 return
-            data = bytes(self._buffer[5 : size + 5])
-            del self._buffer[: size + 5]
+            end = size + 5
+            data = bytes(self._buffer[5:end])
+            del self._buffer[:end]
             if flags & 1:
                 raise ProtocolError("compressed Connect messages are not supported")
             payload = _decode_mapping(data)

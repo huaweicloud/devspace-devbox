@@ -1,5 +1,9 @@
 //go:build windows
 
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package terminal
 
 import (

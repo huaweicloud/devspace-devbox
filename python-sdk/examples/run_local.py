@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import runpy
 import socket
@@ -10,8 +11,11 @@ from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 
+LOG = logging.getLogger(__name__)
+
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     original = socket.getaddrinfo
     gateway_ip = os.getenv("DEVBOX_GATEWAY_IP", "").strip()
     if gateway_ip:
@@ -31,7 +35,7 @@ def main() -> None:
 
         # Only DNS changes; the request URL, HTTP Host and TLS SNI stay intact.
         socket.getaddrinfo = resolve
-        print(f"Local DNS: *-49983.* -> {gateway_ip}", flush=True)
+        LOG.info(f"Local DNS: *-49983.* -> {gateway_ip}")
     original_argv = sys.argv
     try:
         script = str(Path(__file__).with_name("validate_full.py"))

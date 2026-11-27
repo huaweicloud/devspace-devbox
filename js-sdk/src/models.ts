@@ -1,4 +1,8 @@
-import { ProtocolError } from "./errors.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import { ProtocolError } from './errors.js';
 import {
   dateValue,
   numberValue,
@@ -12,31 +16,31 @@ import {
   stringRecord,
   stringValue,
   type WireObject,
-} from "./internal/wire.js";
+} from './internal/wire.js';
 
 /** Lifecycle states of a sandbox as reported by the Manager API. */
 export const SandboxState = {
-  Running: "running",
-  Paused: "paused",
-  Stopped: "stopped",
+  Running: 'running',
+  Paused: 'paused',
+  Stopped: 'stopped',
 } as const;
 /** One of the {@link SandboxState} values. */
 export type SandboxState = (typeof SandboxState)[keyof typeof SandboxState];
 
 /** Entry types returned by the sandbox filesystem. */
-export const FileType = { File: "file", Directory: "directory", Symlink: "symlink" } as const;
+export const FileType = { File: 'file', Directory: 'directory', Symlink: 'symlink' } as const;
 /** One of the {@link FileType} values. */
 export type FileType = (typeof FileType)[keyof typeof FileType];
 
 /** Deadline behavior requested at sandbox creation. */
 export interface SandboxLifecycle {
-  onTimeout?: "kill" | "pause";
+  onTimeout?: 'kill' | 'pause';
   autoResume?: boolean;
 }
 
 /** Deadline behavior as reported by the Manager API (all fields resolved). */
 export interface SandboxInfoLifecycle {
-  onTimeout: "kill" | "pause";
+  onTimeout: 'kill' | 'pause';
   autoResume: boolean;
 }
 
@@ -84,7 +88,7 @@ export interface ProcessInfo {
   startedAt?: Date;
 } /** One decoded chunk of command output. */
 export interface OutputChunk {
-  stream: "stdout" | "stderr";
+  stream: 'stdout' | 'stderr';
   data: string;
   timestamp?: Date;
 }
@@ -184,25 +188,26 @@ export interface SandboxMetrics {
  * {@link ProtocolError} on an unknown state or lifecycle value.
  */
 export function parseSandboxInfo(value: WireObject): SandboxInfo {
-  const state = stringValue(pickOr(value, "running", "state", "status"));
+  const state = stringValue(pickOr(value, 'running', 'state', 'status'));
   if (!Object.values(SandboxState).includes(state as SandboxState)) {
-    throw new ProtocolError("DevBox returned an invalid SandboxState");
+    throw new ProtocolError('DevBox returned an invalid SandboxState');
   }
   const lifecycle =
-    value.lifecycle && typeof value.lifecycle === "object"
+    value.lifecycle && typeof value.lifecycle === 'object'
       ? objectValue(value.lifecycle)
       : undefined;
-  const onTimeout = lifecycle?.onTimeout ?? "kill";
-  if (onTimeout !== "kill" && onTimeout !== "pause")
-    throw new ProtocolError("DevBox returned an invalid sandbox lifecycle");
+  const onTimeout = lifecycle?.onTimeout ?? 'kill';
+  if (onTimeout !== 'kill' && onTimeout !== 'pause') {
+    throw new ProtocolError('DevBox returned an invalid sandbox lifecycle');
+  }
   return {
-    sandboxId: stringValue(pick(value, "sandboxId", "sandboxID", "sandbox_id", "id")),
-    templateId: stringValue(pickOr(value, "default", "templateId", "templateID", "template_id")),
+    sandboxId: stringValue(pick(value, 'sandboxId', 'sandboxID', 'sandbox_id', 'id')),
+    templateId: stringValue(pickOr(value, 'default', 'templateId', 'templateID', 'template_id')),
     state: state as SandboxState,
     startedAt: optionalDate(
-      pickOr(value, undefined, "createdAt", "created_at", "startedAt", "started_at"),
+      pickOr(value, undefined, 'createdAt', 'created_at', 'startedAt', 'started_at'),
     ),
-    endAt: optionalDate(pickOr(value, undefined, "expiresAt", "expires_at", "endAt", "end_at")),
+    endAt: optionalDate(pickOr(value, undefined, 'expiresAt', 'expires_at', 'endAt', 'end_at')),
     cpuCount: optionalNumber(value.cpuCount),
     memoryMb: optionalNumber(value.memoryMB),
     diskSizeMb: optionalNumber(value.diskSizeMB),
@@ -219,14 +224,14 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
 /** Parses a Manager API template payload into {@link TemplateInfo}. */
 export function parseTemplateInfo(value: WireObject): TemplateInfo {
   return {
-    templateId: stringValue(pick(value, "templateId", "templateID", "template_id")),
-    name: stringValue(value.name ?? stringArray(value.names)[0] ?? value.templateID ?? ""),
+    templateId: stringValue(pick(value, 'templateId', 'templateID', 'template_id')),
+    name: stringValue(value.name ?? stringArray(value.names)[0] ?? value.templateID ?? ''),
     ...(value.names ? { names: stringArray(value.names) } : {}),
     aliases: stringArray(value.aliases),
-    buildId: stringValue(pick(value, "buildId", "buildID", "build_id")),
-    cpuCount: numberValue(pick(value, "cpuCount")),
-    memoryMb: numberValue(pick(value, "memoryMB", "memoryMb", "memory_mb")),
-    diskSizeMb: numberValue(pick(value, "diskSizeMB", "diskSizeMb", "disk_size_mb")),
+    buildId: stringValue(pick(value, 'buildId', 'buildID', 'build_id')),
+    cpuCount: numberValue(pick(value, 'cpuCount')),
+    memoryMb: numberValue(pick(value, 'memoryMB', 'memoryMb', 'memory_mb')),
+    diskSizeMb: numberValue(pick(value, 'diskSizeMB', 'diskSizeMb', 'disk_size_mb')),
   };
 }
 
@@ -236,22 +241,20 @@ export function parseTemplateInfo(value: WireObject): TemplateInfo {
  * connect token from `connectToken` or `envdAccessToken`.
  */
 export function parseConnection(value: WireObject, sandboxId: string): SandboxConnection {
-  let domain = stringValue(value.envdUrl ?? value.domain ?? "");
-  if (
-    !value.envdUrl &&
-    value.envdAccessToken &&
-    !value.connectToken &&
-    domain &&
-    !domain.includes("://")
-  )
+  let domain = stringValue(value.envdUrl ?? value.domain ?? '');
+  const isRelativeDomain = !!domain && !domain.includes('://');
+  const needsEnvdUrl = !value.envdUrl && value.envdAccessToken && !value.connectToken;
+  if (needsEnvdUrl && isRelativeDomain) {
     domain = `https://49983-${sandboxId}.${domain}`;
-  if (domain && !domain.startsWith("http://") && !domain.startsWith("https://"))
+  }
+  if (domain && !domain.startsWith('http://') && !domain.startsWith('https://')) {
     domain = `https://${domain}`;
+  }
   return {
     sandboxId,
     domain,
-    tunnelId: stringValue(value.tunnelId ?? ""),
-    connectToken: stringValue(value.connectToken ?? value.envdAccessToken ?? ""),
+    tunnelId: stringValue(value.tunnelId ?? ''),
+    connectToken: stringValue(value.connectToken ?? value.envdAccessToken ?? ''),
     ...(value.envdAccessToken ? { envdAccessToken: stringValue(value.envdAccessToken) } : {}),
     tokenExpiration: optionalNumber(value.tokenExpiration),
   };
@@ -260,42 +263,43 @@ export function parseConnection(value: WireObject, sandboxId: string): SandboxCo
 /** Parses a process list entry into {@link ProcessInfo}. */
 export function parseProcessInfo(value: WireObject): ProcessInfo {
   const process =
-    value.config && typeof value.config === "object" ? objectValue(value.config) : value;
-  const command = [String(pickOr(process, "", "command", "cmd")), ...stringArray(process.args)]
-    .join(" ")
+    value.config && typeof value.config === 'object' ? objectValue(value.config) : value;
+  const command = [String(pickOr(process, '', 'command', 'cmd')), ...stringArray(process.args)]
+    .join(' ')
     .trim();
   return {
-    pid: numberValue(pick(value, "pid")),
+    pid: numberValue(pick(value, 'pid')),
     command,
-    running: Boolean(pickOr(value, true, "running")),
-    startedAt: optionalDate(pickOr(value, undefined, "startedAt", "started_at")),
+    running: Boolean(pickOr(value, true, 'running')),
+    startedAt: optionalDate(pickOr(value, undefined, 'startedAt', 'started_at')),
   };
 }
 
 /** Parses a filesystem entry into {@link FileInfo}; throws on unknown file types. */
 export function parseFileInfo(value: WireObject): FileInfo {
-  const rawType = stringValue(pickOr(value, "file", "type"));
+  const rawType = stringValue(pickOr(value, 'file', 'type'));
   const type =
     (
       {
-        FILE_TYPE_FILE: "file",
-        FILE_TYPE_DIRECTORY: "directory",
-        FILE_TYPE_SYMLINK: "symlink",
+        FILE_TYPE_FILE: 'file',
+        FILE_TYPE_DIRECTORY: 'directory',
+        FILE_TYPE_SYMLINK: 'symlink',
       } as Record<string, FileType>
     )[rawType] ?? rawType;
-  if (!Object.values(FileType).includes(type as FileType))
-    throw new ProtocolError("DevBox returned an invalid FileType");
+  if (!Object.values(FileType).includes(type as FileType)) {
+    throw new ProtocolError('DevBox returned an invalid FileType');
+  }
   return {
-    name: stringValue(pick(value, "name")),
-    path: stringValue(pick(value, "path")),
+    name: stringValue(pick(value, 'name')),
+    path: stringValue(pick(value, 'path')),
     type: type as FileType,
-    size: numberValue(pickOr(value, 0, "size")),
+    size: numberValue(pickOr(value, 0, 'size')),
     mode: optionalNumber(value.mode),
     permissions: optionalString(value.permissions),
     owner: optionalString(value.owner),
     group: optionalString(value.group),
-    modifiedAt: optionalDate(pickOr(value, undefined, "modifiedTime", "modifiedAt", "modified_at")),
-    symlinkTarget: optionalString(pickOr(value, undefined, "symlinkTarget", "symlink_target")),
+    modifiedAt: optionalDate(pickOr(value, undefined, 'modifiedTime', 'modifiedAt', 'modified_at')),
+    symlinkTarget: optionalString(pickOr(value, undefined, 'symlinkTarget', 'symlink_target')),
   };
 }
 
@@ -303,26 +307,26 @@ export function parseFileInfo(value: WireObject): FileInfo {
 export function parseEnvdMetrics(value: WireObject): EnvdMetrics {
   const oomKills = value.oom_kills;
   return {
-    timestamp: dateValue(pick(value, "ts")),
-    cpuCount: numberValue(pick(value, "cpu_count")),
+    timestamp: dateValue(pick(value, 'ts')),
+    cpuCount: numberValue(pick(value, 'cpu_count')),
     cpuPossible: optionalNumber(value.cpu_possible),
     cpuTarget: optionalNumber(value.cpu_target),
     cpuTargetAttempts: optionalNumber(value.cpu_target_attempts),
     cpuWritePendingMs: optionalNumber(value.cpu_write_pending_ms),
-    cpuUsedPct: numberValue(pick(value, "cpu_used_pct")),
-    memTotal: numberValue(pick(value, "mem_total")),
-    memUsed: numberValue(pick(value, "mem_used")),
-    memCache: numberValue(pick(value, "mem_cache")),
-    diskTotal: numberValue(pick(value, "disk_total")),
-    diskUsed: numberValue(pick(value, "disk_used")),
+    cpuUsedPct: numberValue(pick(value, 'cpu_used_pct')),
+    memTotal: numberValue(pick(value, 'mem_total')),
+    memUsed: numberValue(pick(value, 'mem_used')),
+    memCache: numberValue(pick(value, 'mem_cache')),
+    diskTotal: numberValue(pick(value, 'disk_total')),
+    diskUsed: numberValue(pick(value, 'disk_used')),
     ...(Array.isArray(oomKills) ? { oomKills: oomKills.map((entry) => parseOomKill(entry)) } : {}),
   };
 }
 
 /** Parses an envd OOM kill entry into {@link OomKill}. */
 export function parseOomKill(value: unknown): OomKill {
-  const entry = objectValue(value, "EnvD returned an invalid oom kill entry");
-  return { seq: numberValue(pick(entry, "seq")), process: stringValue(pick(entry, "process")) };
+  const entry = objectValue(value, 'EnvD returned an invalid oom kill entry');
+  return { seq: numberValue(pick(entry, 'seq')), process: stringValue(pick(entry, 'process')) };
 }
 
 /**

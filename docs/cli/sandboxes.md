@@ -23,6 +23,7 @@ devbox sandbox create <templateID>
 | `-m, --metadata` | 沙箱业务标签，`key=value`，可重复 |
 | `-b, --build-id` | 固定模板构建版本 |
 | `-d, --detach` | 只创建沙箱，不进入终端 |
+| `-u, --user` | 在沙箱内以指定用户打开终端，用户须已存在 |
 | `--lifecycle.ontimeout` | 到期动作：`pause` 或 `kill` |
 | `--lifecycle.autoresume` | 到期暂停后允许网关自动恢复，需配合 `--lifecycle.ontimeout pause` |
 | `--network.allow-public-traffic=false` | 应用端口访问需要连接凭证；省略此选项时允许匿名访问应用端口 |
@@ -49,6 +50,7 @@ devbox sandbox connect <sandboxID> -c /tmp -e MYTEST=123
 | `-t, --timeout` | 存活时间，单位秒（10–86400）；省略时，运行中的沙箱不延长，暂停的沙箱恢复后使用服务默认时长 |
 | `-c, --cwd` | 终端会话在沙箱内的工作目录 |
 | `-e, --env` | 终端会话的环境变量，`key=value`，可重复 |
+| `-u, --user` | 在沙箱内以指定用户打开终端，用户须已存在 |
 
 终端内 Ctrl+C 透传给远端进程；拖动窗口改变大小时，尺寸会自动同步到远端。
 
@@ -164,5 +166,6 @@ devbox sandbox exec <sandboxID> -e GO_ENV=dev -- go version
 | `-b, --background` | 后台执行：打印 PID 到 stderr 并立即返回 |
 | `-c, --cwd` | 远程命令的工作目录 |
 | `-e, --env` | 远程命令的环境变量，`key=value`，可重复 |
+| `-u, --user` | 在沙箱内以指定用户执行命令，用户须已存在 |
 
 sandbox ID 之后的全部内容透传给远程命令，devbox 选项必须放在 sandbox ID 之前。前台执行时远程命令的退出码作为本地退出码；管道内容会作为远程命令的 stdin。

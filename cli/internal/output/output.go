@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Package output renders command results as either aligned tables, key/value
 // lines or raw JSON.
 //

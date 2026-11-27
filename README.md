@@ -115,6 +115,7 @@ try {
 ```text
 .
 ├── .github/              # CI、文档发布与镜像同步工作流
+├── cli/                  # DevBox CLI（Go 1.26+）
 ├── python-sdk/           # DevBox Python SDK（Python 3.10+）
 ├── js-sdk/               # DevBox JavaScript / TypeScript SDK（Node.js 20.18.1+）
 ├── docs/                 # VitePress 文档站点（独立工具链，Node.js 24）
@@ -129,6 +130,7 @@ try {
 | --- | --- | --- |
 | Python SDK | `devbox` 包，同步与异步入口 | [python-sdk/README.md](python-sdk/README.md) |
 | JavaScript SDK | `devbox-js-sdk` 包，自带 TypeScript 类型 | [js-sdk/README.md](js-sdk/README.md) |
+| CLI | `devbox` 命令行客户端（Go） | [cli/README.md](cli/README.md) |
 | 文档 | VitePress 站点，发布到 GitHub Pages | [docs/](docs/) |
 
 ## 文档

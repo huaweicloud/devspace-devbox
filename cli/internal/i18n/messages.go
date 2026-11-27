@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package i18n
 
 // Messages is the tree of all user-facing strings of the devbox CLI.
@@ -12,12 +16,14 @@ type Messages struct {
 	Output   OutputMessages
 }
 
+// CommonMessages holds messages shared by all commands.
 type CommonMessages struct {
 	RootShort   Message
 	RootLong    Message
 	FlagVerbose Message
 }
 
+// AuthMessages holds messages of the auth command family (login, logout, status).
 type AuthMessages struct {
 	AuthShort          Message
 	LoginShort         Message
@@ -51,6 +57,7 @@ type AuthMessages struct {
 	CallbackMissingKey Message
 }
 
+// SandboxMessages holds messages of the sandbox command family.
 type SandboxMessages struct {
 	SandboxShort        Message
 	CreateShort         Message
@@ -136,12 +143,14 @@ type SandboxMessages struct {
 	TunnelValidityInsufficient Message
 }
 
+// TemplateMessages holds messages of the template command family.
 type TemplateMessages struct {
 	TemplateShort Message
 	ListShort     Message
 	ListEmpty     Message
 }
 
+// ClientMessages holds messages of the Manager API client layer.
 type ClientMessages struct {
 	Unauthorized           Message
 	UpgradeRequired        Message
@@ -164,10 +173,12 @@ type ClientMessages struct {
 	NoCredential           Message
 }
 
+// ParseMessages holds messages of the key=value argument parsing helpers.
 type ParseMessages struct {
 	ExpectedKeyValue Message
 }
 
+// ConfigMessages holds messages of the config file layer.
 type ConfigMessages struct {
 	ReadConfigFileFailed  Message
 	ResolveHomeFailed     Message
@@ -177,10 +188,12 @@ type ConfigMessages struct {
 	WriteConfigFileFailed Message
 }
 
+// OutputMessages holds messages of the output formatting layer.
 type OutputMessages struct {
 	UnknownFormat     Message
 	EncodeFailed      Message
 	RowLengthMismatch Message
 }
 
+// Msg is the resolved message tree, populated at init time from the active language.
 var Msg Messages

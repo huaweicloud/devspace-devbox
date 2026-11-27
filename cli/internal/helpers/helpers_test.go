@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package helpers
 
 import (
@@ -22,6 +26,7 @@ func TestTranslateSessionError(t *testing.T) {
 		return func(context.Context, string) (*manager.Sandbox, error) { return sb, err }
 	}
 
+	notFoundProbe := probe(nil, &client.APIError{StatusCode: http.StatusNotFound})
 	cases := []struct {
 		name       string
 		err        error
@@ -30,7 +35,7 @@ func TestTranslateSessionError(t *testing.T) {
 		wantNotice bool // msgs must contain the sandbox id (both languages interpolate %s)
 	}{
 		{"normal exit code is never translated", &ExitCodeError{ExitCode: 2}, probe(nil, nil), false, false},
-		{"destroyed sandbox gets a notice", transportErr, probe(nil, &client.APIError{StatusCode: http.StatusNotFound}), true, true},
+		{"destroyed sandbox gets a notice", transportErr, notFoundProbe, true, true},
 		{"paused sandbox gets a notice", transportErr, probe(&manager.Sandbox{State: manager.Paused}, nil), true, true},
 		{"running sandbox keeps the error", transportErr, probe(&manager.Sandbox{State: manager.Running}, nil), false, false},
 		{"failed probe keeps the error", transportErr, probe(nil, fmt.Errorf("dial tcp: timeout")), false, false},

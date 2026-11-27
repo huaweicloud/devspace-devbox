@@ -1,16 +1,20 @@
-import { Buffer } from "node:buffer";
-import { CommandExitError, ConfigurationError, ProtocolError } from "./errors.js";
-import type { ConnectStream, Transport } from "./internal/transport.js";
-import { numberValue, objectValue, pick, pickOr, type WireObject } from "./internal/wire.js";
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+import { Buffer } from 'node:buffer';
+import { CommandExitError, ConfigurationError, ProtocolError } from './errors.js';
+import type { ConnectStream, Transport } from './internal/transport.js';
+import { numberValue, objectValue, pick, pickOr, type WireObject } from './internal/wire.js';
 import {
   type CommandResult,
   type OutputChunk,
   type ProcessInfo,
   type PtySize,
   parseProcessInfo,
-} from "./models.js";
+} from './models.js';
 
-const PROCESS = "/process.Process";
+const PROCESS = '/process.Process';
 type TransportProvider = () => Promise<Transport>;
 /** Callback receiving one decoded chunk of process output. */
 export type OutputHandler = (value: string) => void | Promise<void>;
@@ -37,7 +41,7 @@ export interface WaitOptions {
 
 interface EventSource {
   iterator: AsyncIterator<WireObject>;
-  close(): void;
+  close: () => void;
 }
 
 /**
@@ -49,7 +53,7 @@ export class CommandHandle {
   /** Process ID inside the sandbox. */
   readonly pid: number;
   readonly #commands: Commands;
-  readonly #inputStream: "stdin" | "pty";
+  readonly #inputStream: 'stdin' | 'pty';
   readonly #reconnectTimeoutMs: number | null;
   #events?: EventSource;
   #result?: CommandResult;
@@ -58,7 +62,7 @@ export class CommandHandle {
     pid: number,
     commands: Commands,
     events?: EventSource,
-    inputStream: "stdin" | "pty" = "stdin",
+    inputStream: 'stdin' | 'pty' = 'stdin',
     reconnectTimeoutMs: number | null = 60_000,
   ) {
     this.pid = pid;
@@ -73,7 +77,7 @@ export class CommandHandle {
     pid: number,
     commands: Commands,
     events?: EventSource,
-    inputStream: "stdin" | "pty" = "stdin",
+    inputStream: 'stdin' | 'pty' = 'stdin',
     reconnectTimeoutMs: number | null = 60_000,
   ): CommandHandle {
     return new CommandHandle(pid, commands, events, inputStream, reconnectTimeoutMs);
@@ -96,8 +100,9 @@ export class CommandHandle {
         events.close();
       }
     }
-    if ((options.check ?? true) && this.#result.exitCode !== 0)
+    if ((options.check ?? true) && this.#result.exitCode !== 0) {
       throw new CommandExitError(this.#result);
+    }
     return this.#result;
   }
 
@@ -114,14 +119,14 @@ export class CommandHandle {
   }
 
   /** Delivers a signal to the process; only `SIGTERM` and `SIGKILL` are supported. */
-  async sendSignal(signal: "SIGTERM" | "SIGKILL"): Promise<void> {
+  async sendSignal(signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
     this.#ensureActive();
     await this.#commands.sendSignal(this.pid, signal);
   }
 
   /** Force-kills the process (`SIGKILL`). */
   kill(): Promise<void> {
-    return this.sendSignal("SIGKILL");
+    return this.sendSignal('SIGKILL');
   }
 
   /** Close the local output stream without stopping the remote process. */
@@ -131,7 +136,9 @@ export class CommandHandle {
   }
 
   #ensureActive(): void {
-    if (this.#result) throw new Error("process has already completed");
+    if (this.#result) {
+      throw new Error('process has already completed');
+    }
   }
 }
 
@@ -155,13 +162,15 @@ export class Commands {
   /** Implementation of the {@link Commands.run} overloads. */
   async run(command: string, options: RunOptions = {}): Promise<CommandResult | CommandHandle> {
     if (options.background && (options.onStdout || options.onStderr)) {
-      throw new TypeError("background output callbacks belong on handle.wait()");
+      throw new TypeError('background output callbacks belong on handle.wait()');
     }
     const handle = await this.start(commandBody(command, options), {
       timeoutMs: options.timeoutMs === undefined ? 60_000 : options.timeoutMs,
       user: options.user,
     });
-    if (options.background) return handle;
+    if (options.background) {
+      return handle;
+    }
     return handle.wait({
       onStdout: options.onStdout,
       onStderr: options.onStderr,
@@ -177,7 +186,7 @@ export class Commands {
       pid,
       this,
       await this.connectEvents(pid, timeoutMs),
-      "stdin",
+      'stdin',
       timeoutMs,
     );
   }
@@ -188,13 +197,15 @@ export class Commands {
       await (await this.#transport()).connectUnary(`${PROCESS}/List`, {}),
     );
     const processes = payload.processes ?? [];
-    if (!Array.isArray(processes)) throw new ProtocolError("process response is invalid");
+    if (!Array.isArray(processes)) {
+      throw new ProtocolError('process response is invalid');
+    }
     return processes.map((item) => objectValue(item)).map(parseProcessInfo);
   }
 
   /** Writes data to the stdin of a running (non-PTY) process. */
   sendStdin(pid: number, data: string | Uint8Array): Promise<void> {
-    return this.sendInput(pid, data, "stdin");
+    return this.sendInput(pid, data, 'stdin');
   }
 
   /** Sends EOF to a running (non-PTY) process so it can finish consuming input. */
@@ -204,7 +215,7 @@ export class Commands {
   }
 
   /** Delivers `SIGTERM` or `SIGKILL` to a running process. */
-  async sendSignal(pid: number, signal: "SIGTERM" | "SIGKILL"): Promise<void> {
+  async sendSignal(pid: number, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
     validatePid(pid);
     await (await this.#transport()).connectUnary(`${PROCESS}/SendSignal`, {
       process: { pid },
@@ -219,20 +230,24 @@ export class Commands {
       timeoutMs: number | null;
       user?: string;
       pty?: PtySize;
-      inputStream?: "stdin" | "pty";
+      inputStream?: 'stdin' | 'pty';
     },
   ): Promise<CommandHandle> {
-    const headers: Record<string, string> = { "Keepalive-Ping-Interval": "50" };
+    const headers: Record<string, string> = { 'Keepalive-Ping-Interval': '50' };
     const user = options.user;
     if (user !== undefined) {
-      if (!user || user !== user.trim() || user.includes(":") || user.includes("\0"))
-        throw new ConfigurationError("user must be a non-empty sandbox username");
-      headers.Authorization = `Basic ${Buffer.from(`${user}:`, "utf8").toString("base64")}`;
+      const isBlank = !user || user !== user.trim();
+      const hasSeparator = user.includes(':') || user.includes('\0');
+      if (isBlank || hasSeparator) {
+        throw new ConfigurationError('user must be a non-empty sandbox username');
+      }
+      headers.Authorization = `Basic ${Buffer.from(`${user}:`, 'utf8').toString('base64')}`;
     }
     const request = { ...body };
     if (options.pty) {
-      if (options.pty.rows < 1 || options.pty.cols < 1)
-        throw new RangeError("PTY rows and cols must be positive");
+      if (options.pty.rows < 1 || options.pty.cols < 1) {
+        throw new RangeError('PTY rows and cols must be positive');
+      }
       request.pty = { size: { rows: options.pty.rows, cols: options.pty.cols } };
     }
     const transport = await this.#transport();
@@ -244,7 +259,7 @@ export class Commands {
     );
     const events = eventSource(stream);
     try {
-      const pid = await firstPid(events.iterator, "start process");
+      const pid = await firstPid(events.iterator, 'start process');
       return CommandHandle.fromProcess(pid, this, events, options.inputStream, options.timeoutMs);
     } catch (error) {
       events.close();
@@ -258,12 +273,12 @@ export class Commands {
       `${PROCESS}/Connect`,
       { process: { pid } },
       timeoutMs ?? undefined,
-      { "Keepalive-Ping-Interval": "50" },
+      { 'Keepalive-Ping-Interval': '50' },
     );
     const events = eventSource(stream);
     try {
-      if ((await firstPid(events.iterator, "connect to process")) !== pid) {
-        throw new ProtocolError("EnvD connected to an unexpected process");
+      if ((await firstPid(events.iterator, 'connect to process')) !== pid) {
+        throw new ProtocolError('EnvD connected to an unexpected process');
       }
       return events;
     } catch (error) {
@@ -273,24 +288,28 @@ export class Commands {
   }
 
   /** @internal */
-  async sendInput(pid: number, data: string | Uint8Array, stream: "stdin" | "pty"): Promise<void> {
+  async sendInput(pid: number, data: string | Uint8Array, stream: 'stdin' | 'pty'): Promise<void> {
     validatePid(pid);
-    const bytes = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+    const bytes = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
     await (await this.#transport()).connectUnary(`${PROCESS}/SendInput`, {
       process: { pid },
-      input: { [stream]: bytes.toString("base64") },
+      input: { [stream]: bytes.toString('base64') },
     });
   }
 }
 
 function commandBody(command: string, options: RunOptions): WireObject {
-  if (!command.trim()) throw new TypeError("command must not be blank");
+  if (!command.trim()) {
+    throw new TypeError('command must not be blank');
+  }
   const process: WireObject = {
-    cmd: "/bin/bash",
-    args: ["-l", "-c", command],
+    cmd: '/bin/bash',
+    args: ['-l', '-c', command],
     envs: { ...options.envs },
   };
-  if (options.cwd) process.cwd = options.cwd;
+  if (options.cwd) {
+    process.cwd = options.cwd;
+  }
   return { process, stdin: options.stdin ?? false };
 }
 
@@ -300,12 +319,49 @@ function eventSource(stream: ConnectStream): EventSource {
 
 async function firstPid(events: AsyncIterator<WireObject>, action: string): Promise<number> {
   const response = await events.next();
-  if (response.done) throw new ProtocolError(`EnvD did not ${action}`);
-  const event = objectValue(pick(response.value, "event"));
-  const start = objectValue(pick(event, "start"));
-  const pid = numberValue(pick(start, "pid"));
+  if (response.done) {
+    throw new ProtocolError(`EnvD did not ${action}`);
+  }
+  const event = objectValue(pick(response.value, 'event'));
+  const start = objectValue(pick(event, 'start'));
+  const pid = numberValue(pick(start, 'pid'));
   validatePid(pid);
   return pid;
+}
+
+/** Extracts decoded output chunks from a single Connect data frame. */
+function extractChunks(
+  data: Record<string, unknown>,
+  stdoutDecoder: TextDecoder,
+  stderrDecoder: TextDecoder,
+): OutputChunk[] {
+  const chunks: OutputChunk[] = [];
+  for (const source of ['stdout', 'stderr', 'pty'] as const) {
+    if (!(source in data)) {
+      continue;
+    }
+    const target = source === 'pty' ? 'stdout' : source;
+    const decoder = target === 'stdout' ? stdoutDecoder : stderrDecoder;
+    const value = decoder.decode(decodeBase64(data[source]), { stream: true });
+    if (value) {
+      chunks.push({ stream: target, data: value });
+    }
+  }
+  return chunks;
+}
+
+/** Dispatches decoded chunks to the output buffers and callbacks. */
+async function dispatchChunks(
+  chunks: OutputChunk[],
+  stdout: string[],
+  stderr: string[],
+  onStdout?: OutputHandler,
+  onStderr?: OutputHandler,
+): Promise<void> {
+  for (const chunk of chunks) {
+    (chunk.stream === 'stdout' ? stdout : stderr).push(chunk.data);
+    await (chunk.stream === 'stdout' ? onStdout?.(chunk.data) : onStderr?.(chunk.data));
+  }
 }
 
 async function collectEvents(
@@ -316,36 +372,30 @@ async function collectEvents(
 ): Promise<CommandResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  const stdoutDecoder = new TextDecoder("utf-8");
-  const stderrDecoder = new TextDecoder("utf-8");
+  const stdoutDecoder = new TextDecoder('utf-8');
+  const stderrDecoder = new TextDecoder('utf-8');
   let exitCode: number | undefined;
 
   while (true) {
     const next = await events.next();
-    if (next.done) break;
+    if (next.done) {
+      break;
+    }
     const event =
-      next.value.event && typeof next.value.event === "object"
+      next.value.event && typeof next.value.event === 'object'
         ? objectValue(next.value.event)
         : undefined;
-    if (!event) continue;
-    const data = event.data && typeof event.data === "object" ? objectValue(event.data) : undefined;
-    if (data) {
-      const chunks: OutputChunk[] = [];
-      for (const source of ["stdout", "stderr", "pty"] as const) {
-        if (!(source in data)) continue;
-        const target = source === "pty" ? "stdout" : source;
-        const decoder = target === "stdout" ? stdoutDecoder : stderrDecoder;
-        const value = decoder.decode(decodeBase64(data[source]), { stream: true });
-        if (value) chunks.push({ stream: target, data: value });
-      }
-      for (const chunk of chunks) {
-        (chunk.stream === "stdout" ? stdout : stderr).push(chunk.data);
-        await (chunk.stream === "stdout" ? onStdout?.(chunk.data) : onStderr?.(chunk.data));
-      }
+    if (!event) {
+      continue;
     }
-    if (event.end && typeof event.end === "object") {
+    const data = event.data && typeof event.data === 'object' ? objectValue(event.data) : undefined;
+    if (data) {
+      const chunks = extractChunks(data, stdoutDecoder, stderrDecoder);
+      await dispatchChunks(chunks, stdout, stderr, onStdout, onStderr);
+    }
+    if (event.end && typeof event.end === 'object') {
       const end = objectValue(event.end);
-      exitCode = numberValue(pickOr(end, 0, "exitCode", "exit_code"));
+      exitCode = numberValue(pickOr(end, 0, 'exitCode', 'exit_code'));
     }
   }
 
@@ -359,19 +409,22 @@ async function collectEvents(
     stderr.push(stderrTail);
     await onStderr?.(stderrTail);
   }
-  if (exitCode === undefined)
-    throw new ProtocolError("command stream ended without an exit status");
-  return { exitCode, stdout: stdout.join(""), stderr: stderr.join(""), pid };
+  if (exitCode === undefined) {
+    throw new ProtocolError('command stream ended without an exit status');
+  }
+  return { exitCode, stdout: stdout.join(''), stderr: stderr.join(''), pid };
 }
 
 function decodeBase64(value: unknown): Uint8Array {
   const text = String(value);
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)) {
-    throw new ProtocolError("EnvD returned invalid process output");
+    throw new ProtocolError('EnvD returned invalid process output');
   }
-  return Buffer.from(text, "base64");
+  return Buffer.from(text, 'base64');
 }
 
 function validatePid(pid: number): void {
-  if (!Number.isInteger(pid) || pid < 1) throw new RangeError("pid must be a positive integer");
+  if (!Number.isInteger(pid) || pid < 1) {
+    throw new RangeError('pid must be a positive integer');
+  }
 }

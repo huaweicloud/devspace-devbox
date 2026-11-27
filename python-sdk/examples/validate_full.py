@@ -2,25 +2,29 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
+import posixpath
 import re
-import sys
 import tempfile
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
 
 from devbox import (
+    AsyncCommandHandle,
     AsyncDevBox,
+    AsyncSandbox,
     CommandExitError,
     CommandHandle,
     CommandResult,
     DevBox,
     DevBoxError,
+    FileWatchEvent,
     NotFoundError,
     PtySize,
     Sandbox,
@@ -31,6 +35,7 @@ from devbox import (
 )
 from devbox.config import ConnectionConfig
 
+LOG = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
@@ -44,7 +49,7 @@ class Validator:
     def verify(self, name: str, operation: Callable[[], T]) -> T | None:
         self.tests += 1
         started_at = time.monotonic()
-        print(f"\nTEST {self.tests:02d} | {name}", flush=True)
+        LOG.info(f"\nTEST {self.tests:02d} | {name}")
         try:
             result = operation()
         except Exception as error:
@@ -52,26 +57,27 @@ class Validator:
             detail = ""
             if isinstance(error, DevBoxError):
                 detail = f" | http={error.status_code} request_id={error.request_id}"
-            print(
-                f"FAIL {name} | {_seconds(started_at)}s | {type(error).__name__}: {error}{detail}",
-                flush=True,
+            LOG.error(
+                f"FAIL {name} | {_seconds(started_at)}s | {type(error).__name__}: {error}{detail}"
             )
             if error.__cause__ is not None:
-                traceback.print_exception(type(error), error, error.__traceback__, file=sys.stdout)
+                LOG.error(
+                    "".join(traceback.format_exception(type(error), error, error.__traceback__))
+                )
             return None
         finally:
             self.timings[name] = time.monotonic() - started_at
-        print(f"PASS {name} | {_seconds(started_at)}s", flush=True)
+        LOG.info(f"PASS {name} | {_seconds(started_at)}s")
         return result
 
     def finish(self) -> None:
         passed = self.tests - len(self.failures)
-        print(
+        LOG.info(
             f"SUMMARY tests={self.tests} passed={passed} failed={len(self.failures)}"
             f" elapsed={_seconds(self.started_at)}s"
         )
         if self.failures:
-            print(f"FAILED {', '.join(self.failures)}")
+            LOG.info(f"FAILED {', '.join(self.failures)}")
 
 
 def run_round(mode: str) -> Validator:
@@ -79,10 +85,10 @@ def run_round(mode: str) -> Validator:
     validator = Validator()
     sandbox: Sandbox | None = None
 
-    print(f"DevBox {mode} validation | template={template}")
+    LOG.info(f"DevBox {mode} validation | template={template}")
     gateway_url = ConnectionConfig.resolve().gateway_url
     if gateway_url:
-        print(f"gateway={gateway_url}")
+        LOG.info(f"gateway={gateway_url}")
     if gateway_url and "{tunnel_id}" not in gateway_url:
         raise ValueError(
             "Validation requires the created sandbox: unset DEVBOX_GATEWAY_URL or use {tunnel_id}"
@@ -95,34 +101,7 @@ def run_round(mode: str) -> Validator:
         if selected is None:
             validator.finish()
             return validator
-        _section(
-            "Create sandbox", f"Start template={template!r}, timeout=300s, with an isolated runtime"
-        )
-        lifecycle = (
-            SandboxLifecycle(on_timeout="pause", auto_resume=True) if mode != "basic" else None
-        )
-        sandbox = validator.verify(
-            "sandbox.create",
-            lambda: _step(
-                f"sandboxes.create(timeout=300, envs=..., lifecycle={lifecycle!r})",
-                lambda: client.sandboxes.create(
-                    selected.template_id,
-                    build_id=selected.build_id,
-                    timeout=300,
-                    envs={"DEVBOX_SDK_ENV": "created-731"},
-                    metadata={"sdk_validation": "python"},
-                    lifecycle=lifecycle,
-                ),
-            ),
-        )
-        if sandbox is None:
-            print("STOP sandbox creation failed; runtime validation cannot continue")
-        else:
-            print(f"sandbox_id={sandbox.sandbox_id}")
-            if mode != "lifecycle":
-                validate_sandbox(client, sandbox, validator)
-            if mode != "basic":
-                validate_lifecycle(client, sandbox, validator)
+        sandbox = _create_sandbox(client, validator, selected, template, mode)
     finally:
         if sandbox is not None:
             _section("Cleanup", "Delete the remote sandbox and close local connections")
@@ -139,7 +118,44 @@ def run_round(mode: str) -> Validator:
     return validator
 
 
-def main() -> None:
+def _create_sandbox(
+    client: DevBox,
+    validator: Validator,
+    selected: TemplateInfo,
+    template: str,
+    mode: str,
+) -> Sandbox | None:
+    _section(
+        "Create sandbox", f"Start template={template!r}, timeout=300s, with an isolated runtime"
+    )
+    lifecycle = SandboxLifecycle(on_timeout="pause", auto_resume=True) if mode != "basic" else None
+    sandbox = validator.verify(
+        "sandbox.create",
+        lambda: _step(
+            f"sandboxes.create(timeout=300, envs=..., lifecycle={lifecycle!r})",
+            lambda: client.sandboxes.create(
+                selected.template_id,
+                build_id=selected.build_id,
+                timeout=300,
+                envs={"DEVBOX_SDK_ENV": "created-731"},
+                metadata={"sdk_validation": "python"},
+                lifecycle=lifecycle,
+            ),
+        ),
+    )
+    if sandbox is None:
+        LOG.warning("STOP sandbox creation failed; runtime validation cannot continue")
+        return None
+    LOG.info(f"sandbox_id={sandbox.sandbox_id}")
+    if mode != "lifecycle":
+        validate_sandbox(client, sandbox, validator)
+    if mode != "basic":
+        validate_lifecycle(client, sandbox, validator)
+    return sandbox
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Validate DevBox SDK functionality")
     parser.add_argument("--mode", choices=("basic", "lifecycle", "full"), default="full")
     parser.add_argument("--rounds", type=int, default=1, help="Serial repetitions")
@@ -148,34 +164,33 @@ def main() -> None:
         parser.error("--rounds must be positive")
     runs: list[Validator] = []
     for number in range(1, args.rounds + 1):
-        print(f"\nROUND {number}/{args.rounds}", flush=True)
+        LOG.info(f"\nROUND {number}/{args.rounds}")
         result = run_round(args.mode)
         runs.append(result)
         if "sandbox.create" not in result.timings or any(
             name in result.failures
             for name in ("sandbox.create", "sandbox.delete", "lifecycle.timeout_kill")
         ):
-            print("STOP batch: creation or cleanup failed; inspect before continuing")
+            LOG.warning("STOP batch: creation or cleanup failed; inspect before continuing")
             break
     passed = sum(not run.failures for run in runs)
     if args.rounds > 1:
-        print(f"\nBATCH attempted={len(runs)} passed={passed} failed={len(runs) - passed}")
+        LOG.info(f"\nBATCH attempted={len(runs)} passed={passed} failed={len(runs) - passed}")
         for name in dict.fromkeys(name for run in runs for name in run.timings):
             values = [run.timings[name] for run in runs if name in run.timings]
             failures = sum(name in run.failures for run in runs)
-            print(
+            LOG.info(
                 f"  {name} | n={len(values)} failed={failures}"
                 f" | min={min(values):.3f}s avg={sum(values) / len(values):.3f}s"
                 f" max={max(values):.3f}s"
             )
-    if passed != args.rounds:
-        raise SystemExit(1)
+    return 0 if passed == args.rounds else 1
 
 
 def _select_template(client: DevBox, name: str) -> TemplateInfo:
     templates = _step("templates.list()", client.templates.list)
     for item in templates:
-        print(
+        LOG.info(
             f"    {item.name} | id={item.template_id} | build={item.build_id}"
             f" | aliases={','.join(item.aliases)} | cpu={item.cpu_count}"
             f" | memory={item.memory_mb} MiB"
@@ -185,7 +200,7 @@ def _select_template(client: DevBox, name: str) -> TemplateInfo:
     )
     if selected is None:
         raise AssertionError(f"template {name!r} is not in the available catalog")
-    print(f"    SELECT {selected.name} | build={selected.build_id}")
+    LOG.info(f"    SELECT {selected.name} | build={selected.build_id}")
     return selected
 
 
@@ -222,7 +237,8 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
         _step("process.disconnect() | keep the remote process alive", process.disconnect)
 
     def persistence(handle: Sandbox | None = None) -> None:
-        assert process is not None
+        if process is None:
+            raise RuntimeError("persistence() called before the process was created")
         target = sandbox if handle is None else handle
         _equal(
             _step(
@@ -231,10 +247,10 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
             ),
             payload,
         )
-        print("    CHECK file content: identical (1 MiB)", flush=True)
+        LOG.info("    CHECK file content: identical (1 MiB)")
         running = _step("commands.list() | find the original running PID", target.commands.list)
         _equal(any(item.pid == process.pid and item.running for item in running), True)
-        print(f"    CHECK original process: pid={process.pid}, still running", flush=True)
+        LOG.info(f"    CHECK original process: pid={process.pid}, still running")
         _validate_environment(target)
         _equal(_step("sandbox.get_info()", target.get_info).state, SandboxState.RUNNING)
 
@@ -282,28 +298,12 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
         )
         resume_elapsed = time.monotonic() - resume_started
         resume_timings["normal"] = (pause_elapsed, resume_elapsed)
-        print(
+        LOG.info(
             f"    TIMING normal resume | pause={pause_elapsed:.3f}s"
             f" | resume={resume_elapsed:.3f}s"
-            f" | total={pause_elapsed + resume_elapsed:.3f}s",
-            flush=True,
+            f" | total={pause_elapsed + resume_elapsed:.3f}s"
         )
-        if "upgraded" in resume_timings:
-            upgraded_pause, upgraded_resume = resume_timings["upgraded"]
-            resume_overhead = upgraded_resume - resume_elapsed
-            total_overhead = upgraded_pause + upgraded_resume - pause_elapsed - resume_elapsed
-            print(
-                "    TIMING resume comparison | upgraded"
-                f" pause={upgraded_pause:.3f}s resume={upgraded_resume:.3f}s"
-                f" total={upgraded_pause + upgraded_resume:.3f}s"
-                f" | normal pause={pause_elapsed:.3f}s resume={resume_elapsed:.3f}s"
-                f" total={pause_elapsed + resume_elapsed:.3f}s"
-                f" | resume overhead={resume_overhead:+.3f}s"
-                f" ({resume_overhead / resume_elapsed * 100:+.1f}%)"
-                f" | total overhead={total_overhead:+.3f}s"
-                f" ({total_overhead / (pause_elapsed + resume_elapsed) * 100:+.1f}%)",
-                flush=True,
-            )
+        _log_resume_comparison(resume_timings, pause_elapsed, resume_elapsed)
         try:
             _equal(connected.sandbox_id, sandbox.sandbox_id)
             _equal(
@@ -314,10 +314,7 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
                 payload,
             )
             _deadline(connected, 300)
-            print(
-                "    SWITCH sandbox handle to connected | use the resume response token",
-                flush=True,
-            )
+            LOG.info("    SWITCH sandbox handle to connected | use the resume response token")
             persistence(connected)
         finally:
             _step("connected.close() | release the extra SDK handle", connected.close)
@@ -331,9 +328,9 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
         if fresh_connection:
             _step("sandbox.close() | force a fresh data-plane connection", sandbox.close)
         else:
-            print("    Reuse the SDK handle and connection pool without close().", flush=True)
-        print("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime", flush=True)
-        print("    No explicit sandbox.resume() or sandboxes.connect() call follows.", flush=True)
+            LOG.info("    Reuse the SDK handle and connection pool without close().")
+        LOG.info("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime")
+        LOG.info("    No explicit sandbox.resume() or sandboxes.connect() call follows.")
         result = _step(
             "commands.run('printf gateway-wake-ok') | access the paused sandbox directly",
             lambda: sandbox.commands.run("printf gateway-wake-ok", timeout=90),
@@ -366,23 +363,21 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
             lambda: sandbox.envd.health(),
         ).envd_version
         upgrade_window = time.monotonic() - pause_started
-        print(
+        LOG.info(
             f"    before={before!r} after={after!r}"
             f" | pause={pause_elapsed:.3f}s"
             f" | resume={resume_elapsed:.3f}s"
-            f" | upgrade_window={upgrade_window:.3f}s",
-            flush=True,
+            f" | upgrade_window={upgrade_window:.3f}s"
         )
 
         if _version_key(after) == _version_key(before):
-            print(
-                "    SKIP live upgrade | target EnvD is not newer; verify normal resume instead",
-                flush=True,
+            LOG.info(
+                "    SKIP live upgrade | target EnvD is not newer; verify normal resume instead"
             )
         else:
             if _version_key(after) < _version_key(before):
                 raise AssertionError(f"EnvD was downgraded: {before!r} -> {after!r}")
-            print("    CHECK EnvD was upgraded during resume", flush=True)
+            LOG.info("    CHECK EnvD was upgraded during resume")
             resume_timings["upgraded"] = (pause_elapsed, resume_elapsed)
 
         # Whether or not EnvD changed, the same workload and filesystem must
@@ -410,10 +405,33 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
             failures = len(validator.failures)
             validator.verify(name, operation)
             if len(validator.failures) != failures:
-                print("STOP dependent lifecycle steps; cleanup will still run", flush=True)
+                LOG.warning("STOP dependent lifecycle steps; cleanup will still run")
                 return
     finally:
         sandbox.close()
+
+
+def _log_resume_comparison(
+    resume_timings: dict[str, tuple[float, float]],
+    pause_elapsed: float,
+    resume_elapsed: float,
+) -> None:
+    if "upgraded" not in resume_timings:
+        return
+    upgraded_pause, upgraded_resume = resume_timings["upgraded"]
+    resume_overhead = upgraded_resume - resume_elapsed
+    total_overhead = upgraded_pause + upgraded_resume - pause_elapsed - resume_elapsed
+    LOG.info(
+        "    TIMING resume comparison | upgraded"
+        f" pause={upgraded_pause:.3f}s resume={upgraded_resume:.3f}s"
+        f" total={upgraded_pause + upgraded_resume:.3f}s"
+        f" | normal pause={pause_elapsed:.3f}s resume={resume_elapsed:.3f}s"
+        f" total={pause_elapsed + resume_elapsed:.3f}s"
+        f" | resume overhead={resume_overhead:+.3f}s"
+        f" ({resume_overhead / resume_elapsed * 100:+.1f}%)"
+        f" | total overhead={total_overhead:+.3f}s"
+        f" ({total_overhead / (pause_elapsed + resume_elapsed) * 100:+.1f}%)"
+    )
 
 
 def _deadline(sandbox: Sandbox, seconds: int) -> datetime:
@@ -423,14 +441,12 @@ def _deadline(sandbox: Sandbox, seconds: int) -> datetime:
     remaining = (info.end_at - datetime.now(timezone.utc)).total_seconds()
     if not seconds - 15 <= remaining <= seconds + 5:
         raise AssertionError(f"expected about {seconds}s remaining, received {remaining:.1f}s")
-    print(
-        f"    CHECK remaining={remaining:.1f}s | expires_at={info.end_at.isoformat()}", flush=True
-    )
+    LOG.info(f"    CHECK remaining={remaining:.1f}s | expires_at={info.end_at.isoformat()}")
     return info.end_at
 
 
 def _wait_for_state(sandbox: Sandbox, expected: SandboxState) -> None:
-    print(f"  WAIT Manager state={expected.value} | polling every 2s, maximum 90s", flush=True)
+    LOG.info(f"  WAIT Manager state={expected.value} | polling every 2s, maximum 90s")
     started = time.monotonic()
     previous = ""
     while time.monotonic() - started < 90:
@@ -441,7 +457,7 @@ def _wait_for_state(sandbox: Sandbox, expected: SandboxState) -> None:
                 raise
             state = SandboxState.STOPPED
         if state.value != previous:
-            print(f"    STATE {state.value} | elapsed={_seconds(started)}s", flush=True)
+            LOG.info(f"    STATE {state.value} | elapsed={_seconds(started)}s")
             previous = state.value
         if state is expected:
             return
@@ -457,7 +473,7 @@ def _validate_expiry(client: DevBox, template: TemplateInfo) -> None:
             template.template_id, build_id=template.build_id, timeout=10
         ),
     )
-    print(f"    sandbox_id={sandbox.sandbox_id}", flush=True)
+    LOG.info(f"    sandbox_id={sandbox.sandbox_id}")
     try:
         _wait_for_state(sandbox, SandboxState.STOPPED)
         _equal(_step("sandbox.is_running() | expect False", sandbox.is_running), False)
@@ -484,7 +500,7 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
     validator.verify("manager.connect", lambda: _validate_connect(client, sandbox))
     runtime_ready = validator.verify("runtime.ready", lambda: _validate_runtime(sandbox))
     if runtime_ready is None:
-        print("SKIP EnvD, commands, filesystem, PTY and Git: runtime gateway is unavailable")
+        LOG.info("SKIP EnvD, commands, filesystem, PTY and Git: runtime gateway is unavailable")
         return
 
     validator.verify("runtime.environment", lambda: _validate_environment(sandbox))
@@ -545,7 +561,7 @@ def validate_pty(sandbox: Sandbox, validator: Validator) -> None:
         try:
             session.send_stdin("must-not-run\n")
         except RuntimeError:
-            print("    completed session rejects further input", flush=True)
+            LOG.info("    completed session rejects further input")
         else:
             raise AssertionError("completed terminal accepted input")
 
@@ -594,20 +610,19 @@ def _validate_envd_runtime(sandbox: Sandbox) -> None:
     health = _step(
         "envd.health() | probe the data plane and read the EnvD version", sandbox.envd.health
     )
-    print(f"    envd_version={health.envd_version!r}", flush=True)
+    LOG.info(f"    envd_version={health.envd_version!r}")
     _equal(bool(health.envd_version), True)
 
     metrics = _step(
         "envd.get_metrics() | collect one realtime CPU, memory and disk sample",
         sandbox.envd.get_metrics,
     )
-    print(
+    LOG.info(
         f"    cpu={metrics.cpu_count}x {metrics.cpu_used_pct:.2f}%"
         f" | hotplug possible={metrics.cpu_possible} target={metrics.cpu_target}"
         f" attempts={metrics.cpu_target_attempts} pending={metrics.cpu_write_pending_ms}ms"
         f" | memory={metrics.mem_used}/{metrics.mem_total} bytes"
-        f" | disk={metrics.disk_used}/{metrics.disk_total} bytes",
-        flush=True,
+        f" | disk={metrics.disk_used}/{metrics.disk_total} bytes"
     )
     _equal(metrics.cpu_count > 0, True)
     _equal(metrics.cpu_possible is not None, True)
@@ -630,13 +645,13 @@ def _validate_envd_runtime(sandbox: Sandbox) -> None:
     if age > 60:
         raise AssertionError(f"EnvD metric timestamp is {age:.1f}s away from local clock")
     kills = metrics.oom_kills
-    print(f"    oom_kills={'unknown' if kills is None else len(kills)}", flush=True)
+    LOG.info(f"    oom_kills={'unknown' if kills is None else len(kills)}")
     for kill in kills or ():
         _equal(kill.seq >= 0, True)
         _equal(bool(kill.process), True)
 
     envs = _step("envd.get_envs() | read the merged runtime environment", sandbox.envd.get_envs)
-    print(f"    env_keys={sorted(envs)}", flush=True)
+    LOG.info(f"    env_keys={sorted(envs)}")
     _equal(envs.get("DEVBOX_ID"), sandbox.sandbox_id)
     _equal(envs.get("DEVBOX_TEMPLATE_ID"), sandbox.info.template_id)
     _equal(envs.get("DEVBOX_SDK_ENV"), "created-731")
@@ -660,7 +675,7 @@ def _validate_environment(sandbox: Sandbox) -> None:
 
 def _validate_list(client: DevBox, sandbox: Sandbox) -> None:
     page = _step("sandboxes.list(limit=100)", lambda: client.sandboxes.list(limit=100))
-    print(f"    sandboxes={len(page.items)} | current sandbox must be present", flush=True)
+    LOG.info(f"    sandboxes={len(page.items)} | current sandbox must be present")
     _equal(any(item.sandbox_id == sandbox.sandbox_id for item in page.items), True)
 
 
@@ -731,9 +746,7 @@ def _background_command(sandbox: Sandbox) -> None:
             timeout=10,
         ),
     )
-    print(
-        "    SDK returned a handle; the remote process can continue in the background", flush=True
-    )
+    LOG.info("    SDK returned a handle; the remote process can continue in the background")
     result = _step(
         f"process.wait(pid={process.pid}) | wait for completion and collect output", process.wait
     )
@@ -745,7 +758,7 @@ def _streaming_command(sandbox: Sandbox) -> None:
 
     def output(chunk: str) -> None:
         chunks.append(chunk)
-        print(f"    STREAM stdout={chunk!r}", flush=True)
+        LOG.info(f"    STREAM stdout={chunk!r}")
 
     result = _step(
         "commands.run(..., on_stdout=...) | receive output while the command is running",
@@ -798,7 +811,7 @@ def _filesystem_basic(sandbox: Sandbox, root: str) -> None:
     _equal(_step(f"files.stat({path!r}) | size in bytes", lambda: sandbox.files.stat(path).size), 7)
     _equal(_step(f"files.exists({path!r})", lambda: sandbox.files.exists(path)), True)
     entries = _step(f"files.list({root!r})", lambda: sandbox.files.list(root))
-    print(f"    entries={[item.name for item in entries]}", flush=True)
+    LOG.info(f"    entries={[item.name for item in entries]}")
     _equal(any(item.name == "input.txt" for item in entries), True)
     _step(f"files.move({path!r}, {moved!r})", lambda: sandbox.files.move(path, moved))
     _equal(_step(f"files.exists({moved!r})", lambda: sandbox.files.exists(moved)), True)
@@ -816,18 +829,19 @@ def _filesystem_transfer(sandbox: Sandbox, root: str) -> None:
     )
     if downloaded != binary:
         raise AssertionError("binary file content changed during transfer")
-    print(f"    verified {len(binary)} bytes, including NUL and non-UTF-8 bytes", flush=True)
+    LOG.info(f"    verified {len(binary)} bytes, including NUL and non-UTF-8 bytes")
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory, "source.txt")
         target = Path(directory, "target.txt")
+        transfer_remote = posixpath.join(root, "transfer.txt")
         source.write_text("transfer-ok", encoding="utf-8")
         _step(
-            f"files.upload({str(source)!r}, {root + '/transfer.txt'!r}) | content='transfer-ok'",
-            lambda: sandbox.files.upload(source, f"{root}/transfer.txt"),
+            f"files.upload({str(source)!r}, {transfer_remote!r}) | content='transfer-ok'",
+            lambda: sandbox.files.upload(source, transfer_remote),
         )
         _step(
-            f"files.download({root + '/transfer.txt'!r}, {str(target)!r})",
-            lambda: sandbox.files.download(f"{root}/transfer.txt", target),
+            f"files.download({transfer_remote!r}, {str(target)!r})",
+            lambda: sandbox.files.download(transfer_remote, target),
         )
         _equal(
             _step("Read downloaded local file", lambda: target.read_text(encoding="utf-8")),
@@ -836,77 +850,84 @@ def _filesystem_transfer(sandbox: Sandbox, root: str) -> None:
 
 
 async def _filesystem_watch(sandbox_id: str, root: str) -> None:
-    print("  DO async files.watch() | observe a real file change, maximum 10s", flush=True)
+    LOG.info("  DO async files.watch() | observe a real file change, maximum 10s")
     async with AsyncDevBox() as client:
         sandbox = await client.sandboxes.connect(sandbox_id)
         events = sandbox.files.watch(root, include_entry=False)
-        process = None
+        process: AsyncCommandHandle | None = None
         try:
             process = await sandbox.commands.run(
                 f"sleep 1; printf watch-ok > {root}/watch-proof.txt", background=True
             )
-
-            async def observed() -> None:
-                async for event in events:
-                    print(f"    EVENT name={event.name!r} type={event.type!r}", flush=True)
-                    if event.name == "watch-proof.txt":
-                        return
-                raise AssertionError("watch stream ended before the file change")
-
-            await asyncio.wait_for(observed(), timeout=10)
+            await asyncio.wait_for(_watch_for_change(events), timeout=10)
             _equal(await sandbox.files.read(f"{root}/watch-proof.txt"), "watch-ok")
             result = await process.wait()
             _expect_result(result, stdout="", stderr="")
         finally:
-            await events.aclose()
-            if process is not None:
-                await process.disconnect()
-            await sandbox.close()
-        print("    CHECK file change observed; watcher and async connections closed", flush=True)
+            await _close_watch(events, process, sandbox)
+        LOG.info("    CHECK file change observed; watcher and async connections closed")
+
+
+async def _watch_for_change(events: AsyncGenerator[FileWatchEvent, None]) -> None:
+    async for event in events:
+        LOG.info(f"    EVENT name={event.name!r} type={event.type!r}")
+        if event.name == "watch-proof.txt":
+            return
+    raise AssertionError("watch stream ended before the file change")
+
+
+async def _close_watch(
+    events: AsyncGenerator[FileWatchEvent, None],
+    process: AsyncCommandHandle | None,
+    sandbox: AsyncSandbox,
+) -> None:
+    await events.aclose()
+    if process is not None:
+        await process.disconnect()
+    await sandbox.close()
 
 
 def _section(name: str, description: str) -> None:
-    print(f"\n=== {name} ===\n{description}", flush=True)
+    LOG.info(f"\n=== {name} ===\n{description}")
 
 
 def _step(description: str, operation: Callable[[], T]) -> T:
-    print(f"  DO {description}", flush=True)
+    LOG.info(f"  DO {description}")
     started = time.monotonic()
     try:
         result = operation()
     except CommandExitError as error:
         _command_output(error.result)
         raise
-    print(f"    DONE | {_seconds(started)}s", flush=True)
+    LOG.info(f"    DONE | {_seconds(started)}s")
     if isinstance(result, CommandResult):
         _command_output(result)
     elif isinstance(result, CommandHandle):
-        print(f"    pid={result.pid}", flush=True)
+        LOG.info(f"    pid={result.pid}")
     elif isinstance(result, SandboxInfo):
-        print(
+        LOG.info(
             f"    state={result.state.value} | template={result.template_id}"
-            f" | end_at={result.end_at}",
-            flush=True,
+            f" | end_at={result.end_at}"
         )
     elif isinstance(result, (str, bool, int)):
-        print(f"    result={result!r}", flush=True)
+        LOG.info(f"    result={result!r}")
     elif isinstance(result, bytes):
-        print(f"    bytes={len(result)} | content checked separately", flush=True)
+        LOG.info(f"    bytes={len(result)} | content checked separately")
     elif isinstance(result, (list, tuple)):
-        print(f"    items={len(result)}", flush=True)
+        LOG.info(f"    items={len(result)}")
     return result
 
 
 def _command_output(result: CommandResult) -> None:
-    print(f"    pid={result.pid} | exit_code={result.exit_code}", flush=True)
+    lines = [f"    pid={result.pid} | exit_code={result.exit_code}"]
     for name, raw in (("stdout", result.stdout), ("stderr", result.stderr)):
         # Show terminal text without executing ANSI/OSC control sequences in the demo console.
         value = _terminal_text(raw)
-        print(f"    {name}:", flush=True)
-        for line in value[:4000].splitlines() or ["(empty)"]:
-            print(f"      {line}", flush=True)
+        lines.append(f"    {name}:")
+        lines.extend(f"      {line}" for line in value[:4000].splitlines() or ["(empty)"])
         if len(value) > 4000:
-            print(f"      ... truncated ({len(value)} characters total)", flush=True)
+            lines.append(f"      ... truncated ({len(value)} characters total)")
+    LOG.info("\n".join(lines))
 
 
 def _terminal_text(value: str) -> str:
@@ -950,4 +971,4 @@ def _version_key(version: str) -> tuple[int, int, int]:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

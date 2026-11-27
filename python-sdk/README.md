@@ -249,8 +249,8 @@ Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Uni
 数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*`、`/files`、
 `/metrics`、`/envs` 和 `/health`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。
-所有数据面请求（包括流式命令和文件传输）均使用 Relay Token Cookie 鉴权，
-不使用 `envdAccessToken` 或 `X-Access-Token`。Manager 未返回有效 `connectToken` 时，SDK 拒绝发起数据面请求。
+所有数据面请求（包括流式命令和文件传输）均使用 `Cookie: relay_token=<connectToken>` 鉴权；
+响应包含 `envdAccessToken` 时，请求同时携带 `X-Access-Token` 头。Manager 未返回有效 `connectToken` 时，SDK 拒绝发起数据面请求。
 
 SDK 仅重试连接建立失败，不自动重试限流、服务端错误或可能已经到达服务端的写操作。
 

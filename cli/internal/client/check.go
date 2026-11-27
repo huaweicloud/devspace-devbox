@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package client
 
 import (
@@ -17,10 +21,14 @@ const (
 	DefaultCheckPath = "/v1/api-keys/check"
 )
 
+// verifyHTTPTimeout keeps key verification fast and independent of the main
+// API client's timeout.
+const verifyHTTPTimeout = 10 * time.Second
+
 // checkHTTPClient is used for key verification. It is intentionally separate
 // from the main API client so verification stays fast and independent.
 var checkHTTPClient = &http.Client{
-	Timeout:   10 * time.Second,
+	Timeout:   verifyHTTPTimeout,
 	Transport: &loggingTransport{base: http.DefaultTransport},
 }
 

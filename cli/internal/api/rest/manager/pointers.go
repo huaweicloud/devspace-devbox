@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 // Pointer helpers for the optional fields of the oapi-codegen generated
 // request/response types. Kept next to the types they exist for.
 

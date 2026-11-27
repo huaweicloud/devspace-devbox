@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import runpy
 import sys
 from pathlib import Path
@@ -12,61 +13,62 @@ from devbox import CommandExitError, CommandResult, ServiceUnavailableError
 example = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "validate_full.py"))
 
 
-def test_failure_shows_cause(capsys: pytest.CaptureFixture[str]) -> None:
+def test_failure_shows_cause(caplog: pytest.LogCaptureFixture) -> None:
     def operation() -> None:
         try:
             raise OSError("certificate verify failed")
         except OSError as error:
             raise ServiceUnavailableError("unable to reach DevBox service") from error
 
+    caplog.set_level(logging.INFO)
     validator = example["Validator"]()
     validator.verify("runtime.ready", operation)
-    output = capsys.readouterr().out
-    assert "FAIL runtime.ready" in output
-    assert "OSError: certificate verify failed" in output
-    assert "Traceback" in output
+    assert "FAIL runtime.ready" in caplog.text
+    assert "OSError: certificate verify failed" in caplog.text
+    assert "Traceback" in caplog.text
     assert validator.failures == ["runtime.ready"]
 
 
 def test_step_prints_command_output_and_preserves_result(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.INFO)
     result = CommandResult(pid=42, exit_code=0, stdout="hello\nworld\n", stderr="warning\n")
     assert example["_step"]("commands.run('hello')", lambda: result) is result
-    output = capsys.readouterr().out
-    assert "DO commands.run('hello')" in output
-    assert "pid=42 | exit_code=0" in output
-    assert "stdout:\n      hello\n      world" in output
-    assert "stderr:\n      warning" in output
+    assert "DO commands.run('hello')" in caplog.text
+    assert "pid=42 | exit_code=0" in caplog.text
+    assert "stdout:\n      hello\n      world" in caplog.text
+    assert "stderr:\n      warning" in caplog.text
 
 
-def test_failed_command_prints_stderr_and_still_fails(capsys: pytest.CaptureFixture[str]) -> None:
+def test_failed_command_prints_stderr_and_still_fails(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+
     def operation() -> None:
         raise CommandExitError(CommandResult(exit_code=127, stderr="git: command not found"))
 
     validator = example["Validator"]()
     validator.verify("git.workflow", lambda: example["_step"]("git init", operation))
     validator.finish()
-    output = capsys.readouterr().out
-    assert "git: command not found" in output
-    assert "FAIL git.workflow" in output
-    assert "SUMMARY tests=1 passed=0 failed=1" in output
+    assert "git: command not found" in caplog.text
+    assert "FAIL git.workflow" in caplog.text
+    assert "SUMMARY tests=1 passed=0 failed=1" in caplog.text
 
 
-def test_step_does_not_dump_connection_objects(capsys: pytest.CaptureFixture[str]) -> None:
+def test_step_does_not_dump_connection_objects(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
     response = {"connectToken": "secret-token", "envdAccessToken": "private-token"}
     assert example["_step"]("connect", lambda: response) is response
-    output = capsys.readouterr().out
-    assert "secret-token" not in output
-    assert "private-token" not in output
+    assert "secret-token" not in caplog.text
+    assert "private-token" not in caplog.text
 
 
-def test_command_output_is_bounded(capsys: pytest.CaptureFixture[str]) -> None:
+def test_command_output_is_bounded(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
     example["_command_output"](CommandResult(exit_code=0, stdout="x" * 5000))
-    output = capsys.readouterr().out
-    assert "truncated (5000 characters total)" in output
-    assert "(empty)" in output
-    assert "x" * 4001 not in output
+    assert "truncated (5000 characters total)" in caplog.text
+    assert "(empty)" in caplog.text
+    assert "x" * 4001 not in caplog.text
 
 
 def test_terminal_validation_rejects_input_echo_without_execution() -> None:
@@ -79,15 +81,15 @@ def test_terminal_validation_rejects_input_echo_without_execution() -> None:
 
 
 def test_terminal_output_is_readable_without_changing_raw_result(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.INFO)
     raw = "\x1b]0;root@devbox:~\x07\x1b[32mhello\x1b[0m\r\n"
     result = CommandResult(exit_code=0, stdout=raw)
     example["_command_output"](result)
-    output = capsys.readouterr().out
-    assert "hello" in output
-    assert "\x1b" not in output
-    assert "root@devbox" not in output
+    assert "hello" in caplog.text
+    assert "\x1b" not in caplog.text
+    assert "root@devbox" not in caplog.text
     assert result.stdout == raw
 
 
@@ -109,10 +111,9 @@ def test_batch_failure_and_cleanup_policy(monkeypatch: pytest.MonkeyPatch, faile
     monkeypatch.setitem(namespace, "run_round", run)
     monkeypatch.setattr(sys, "argv", ["validate_full.py", "--mode", "basic", "--rounds", "2"])
     if failed:
-        with pytest.raises(SystemExit, match="1"):
-            example["main"]()
+        assert example["main"]() == 1
     else:
-        example["main"]()
+        assert example["main"]() == 0
     expected = 1 if failed in ("sandbox.create", "sandbox.delete", "lifecycle.timeout_kill") else 2
     assert run.call_count == expected
     run.assert_called_with("basic")

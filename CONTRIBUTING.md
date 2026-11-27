@@ -13,6 +13,11 @@ DevBox 是一个 Monorepo，两个 SDK 各自使用独立的首层目录和工�
 ```text
 .
 ├── .github/              # CI 工作流、Dependabot、Issue 模板
+├── cli/                  # DevBox CLI（Go 1.26+）
+│   ├── cmd/              # cobra 命令树（auth/sandbox/template）
+│   ├── internal/         # 客户端、认证、终端、i18n、输出等内部实现
+│   ├── Makefile          # build / test / vet / fmt / lint
+│   └── README.md         # CLI 说明
 ├── python-sdk/           # DevBox Python SDK（Python 3.10+）
 │   ├── src/              # 包源码（导入名 devbox）
 │   ├── tests/            # pytest 测试
@@ -22,6 +27,7 @@ DevBox 是一个 Monorepo，两个 SDK 各自使用独立的首层目录和工�
 │   ├── src/              # TypeScript 源码
 │   ├── examples/         # 验收与本地联调脚本
 │   └── package.json      # biome / tsc / vitest 配置
+├── docs/                 # VitePress 文档站点（独立工具链，Node.js 24）
 ├── LICENSE               # Apache 2.0
 ├── CONTRIBUTING.md       # 本文件
 └── README.md             # 仓库总览
@@ -235,6 +241,8 @@ npm run validate -- --mode lifecycle --rounds 5
 | --- | --- |
 | `python` | Python SDK |
 | `js` | JavaScript SDK |
+| `cli` | DevBox CLI |
+| `docs` | 文档站点 |
 | `ci` | CI/CD 配置 |
 
 ### 示例

@@ -1,13 +1,17 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package cmd
 
 import (
 	"fmt"
 	"strconv"
 
+	"github.com/spf13/cobra"
+
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/output"
-
-	"github.com/spf13/cobra"
 )
 
 // templateCmd implements `devbox template`.

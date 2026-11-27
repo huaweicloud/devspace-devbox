@@ -79,17 +79,19 @@ cli/
 │   ├── devbox/main.go    # 入口 main
 │   └── *.go              # cobra 命令树（auth/sandbox/template）
 ├── internal/
-│   ├── api/              # 类型化客户端（client.gen.go 手维护）+ 指针工具
-│   ├── api/proto/        # envd process/terminal API 的 proto 与生成代码
+│   ├── api/              # Manager REST 客户端与 envd ConnectRPC 生成代码
+│   ├── api/grpc/process/ # envd process API 的 proto 与生成代码（go generate）
+│   ├── api/rest/manager/ # Manager API 的 openapi.yaml 契约与手维护类型化客户端 + 指针工具
 │   ├── auth/             # 登录：keyring+配置存储、API Key 校验、浏览器回调
 │   ├── client/           # 端侧封装：鉴权、错误解码、envd 数据面客户端
 │   ├── config/           # 配置解析与持久化
+│   ├── helpers/          # 入参校验、shell 引用、key=value 解析、会话辅助
 │   ├── i18n/             # 中英文消息（DEVBOX_LANG）
+│   ├── mask/             # 敏感信息脱敏
 │   ├── output/           # pretty/json 渲染与展示工具
-│   ├── parse/            # key=value 参数解析
-│   └── term/             # 交互式终端：raw mode、双向 pump、resize
+│   └── terminal/         # 交互式终端：raw mode、双向 pump、resize
 ├── Makefile
-└── openapi.yaml          # 已移除；客户端 client.gen.go 手维护
+└── README.md             # 本文件
 ```
 
 ## 开发验证

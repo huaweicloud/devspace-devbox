@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 package cmd
 
 import (
@@ -5,12 +9,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/huaweicloud/devspace-devbox/cli/internal/auth"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/config"
 	"github.com/huaweicloud/devspace-devbox/cli/internal/i18n"
-
-	"github.com/spf13/cobra"
 )
+
+// authStatusVerifyTimeout bounds the API-key verification in `devbox auth status`.
+const authStatusVerifyTimeout = 15 * time.Second
 
 // authCmd implements `devbox auth`.
 var authCmd = &cobra.Command{
@@ -81,7 +88,7 @@ var statusCmd = &cobra.Command{
 			return nil
 		}
 
-		ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(cmd.Context(), authStatusVerifyTimeout)
 		defer cancel()
 		if err := auth.VerifyAPIKey(ctx, config.DefaultServer, cred.APIKey); err != nil {
 			if auth.IsUnauthorized(err) {

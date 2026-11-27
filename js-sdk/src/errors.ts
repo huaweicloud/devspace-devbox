@@ -1,3 +1,7 @@
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
 /** One structured detail entry from a DevBox API error response. */
 export interface ErrorDetail {
   code: string;
@@ -28,7 +32,7 @@ export class DevBoxError extends Error {
   constructor(message: string, options: DevBoxErrorOptions = {}) {
     super(message, { cause: options.cause });
     this.name = new.target.name;
-    this.code = options.code ?? "";
+    this.code = options.code ?? '';
     this.statusCode = options.statusCode;
     this.target = options.target;
     this.details = options.details ?? [];
@@ -71,7 +75,7 @@ export class CommandExitError extends DevBoxError {
   readonly result: CommandResultLike;
 
   constructor(result: CommandResultLike) {
-    super(`command exited with status ${result.exitCode}`, { code: "COMMAND_EXIT" });
+    super(`command exited with status ${result.exitCode}`, { code: 'COMMAND_EXIT' });
     this.result = result;
   }
 }
