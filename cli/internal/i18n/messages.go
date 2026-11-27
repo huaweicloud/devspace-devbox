@@ -1,0 +1,194 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2027. All rights reserved.
+ */
+
+package i18n
+
+// Messages is the tree of all user-facing strings of the devbox CLI.
+type Messages struct {
+	Common   CommonMessages
+	Auth     AuthMessages
+	Sandbox  SandboxMessages
+	Template TemplateMessages
+	Client   ClientMessages
+	Parse    ParseMessages
+	Config   ConfigMessages
+	Output   OutputMessages
+}
+
+// CommonMessages holds messages shared by all commands.
+type CommonMessages struct {
+	RootShort   Message
+	RootLong    Message
+	FlagVerbose Message
+}
+
+// AuthMessages holds messages of the auth command family (login, logout, status).
+type AuthMessages struct {
+	AuthShort          Message
+	LoginShort         Message
+	LoginLong          Message
+	LoginFailed        Message
+	LoginSuccess       Message
+	LoginReused        Message
+	LoginVerifyFailed  Message
+	LoginKeyInvalid    Message
+	LoginAPIKeyInvalid Message
+	LogoutShort        Message
+	LogoutSuccess      Message
+	StatusShort        Message
+	NotLoggedIn        Message
+	CredInvalidHint    Message
+	StatusVerifyFailed Message
+	LoggedIn           Message
+	UserName           Message
+	APIKeyFlag         Message
+	LoginURLNotSet     Message
+	BrowserOpened      Message
+	NoBrowserHint      Message
+	BindCallbackServer Message
+	MissingAPIKey      Message
+	LoginTimeout       Message
+	CallbackBizError   Message
+	CallbackForbidden  Message
+	CallbackNoMethod   Message
+	CallbackBadBody    Message
+	CallbackLoginFail  Message
+	CallbackMissingKey Message
+}
+
+// SandboxMessages holds messages of the sandbox command family.
+type SandboxMessages struct {
+	SandboxShort        Message
+	CreateShort         Message
+	InvalidMetadata     Message
+	InvalidEnv          Message
+	AutoResumeRequires  Message
+	InvalidOnTimeout    Message
+	MissingDomain       Message
+	MissingConnectToken Message
+	ConnectingTo        Message
+	RemoteShellExited   Message
+	ClosingConnection   Message
+	ListShort           Message
+	ListEmpty           Message
+	InvalidState        Message
+	InvalidSandboxID    Message
+	InvalidTemplateID   Message
+	InfoShort           Message
+	KillShort           Message
+	Killed              Message
+	KillAllConflict     Message
+	KillRequiresArgs    Message
+	KillPartialFailed   Message
+	FlagKillAll         Message
+	FlagKillState       Message
+	FlagKillMetadata    Message
+	PauseShort          Message
+	Paused              Message
+	ResumeShort         Message
+	Resumed             Message
+	ConnectShort        Message
+	TimeoutShort        Message
+	TimeoutSet          Message
+	RefreshShort        Message
+	Refreshed           Message
+	ExecShort           Message
+	ExecLong            Message
+	NoProcessID         Message
+	StdinAfterExit      Message
+	StdinForwardFailed  Message
+	CloseStdinFailed    Message
+	MissingCommand      Message
+	FlagTimeout         Message
+	FlagNewTimeout      Message
+	FlagTimeoutKeep     Message
+	InvalidTimeout      Message
+	FlagMetadata        Message
+	FlagMetadataFilter  Message
+	FlagTemplateFilter  Message
+	FlagEnv             Message
+	FlagEnvTerm         Message
+	FlagEnvSession      Message
+	FlagBuildID         Message
+	FlagOnTimeout       Message
+	FlagAutoResume      Message
+	FlagNetworkPublic   Message
+	FlagDetach          Message
+	FlagCwd             Message
+	FlagStartedAfter    Message
+	FlagOrder           Message
+	InvalidOrder        Message
+	InvalidStartedAfter Message
+	FlagState           Message
+	FlagLimit           Message
+	InvalidLimit        Message
+	FlagFormat          Message
+	FlagDuration        Message
+	FlagBackground      Message
+	FlagUser            Message
+
+	// Session-interruption arbitration: friendly notices shown when the
+	// streaming connection drops because the sandbox was destroyed or paused.
+	SessionEndedSandboxGone   Message
+	SessionEndedSandboxPaused Message
+
+	// Tunnel errors returned by the Manager with HTTP 409 on connect/resume.
+	TunnelExpired              Message
+	TunnelValidityInsufficient Message
+}
+
+// TemplateMessages holds messages of the template command family.
+type TemplateMessages struct {
+	TemplateShort Message
+	ListShort     Message
+	ListEmpty     Message
+}
+
+// ClientMessages holds messages of the Manager API client layer.
+type ClientMessages struct {
+	Unauthorized           Message
+	UpgradeRequired        Message
+	UpdateLabel            Message
+	InvalidServerURL       Message
+	InvalidServerURLScheme Message
+	InvalidServerURLHost   Message
+	CreateClientFailed     Message
+	APIErrorFormat         Message
+	ErrorResponsePrefix    Message
+	BuildVerifyRequest     Message
+	VerifyFailed           Message
+	VerifyUnexpectedStatus Message
+	EmptyResponseBody      Message
+	InvalidSandboxDomain   Message
+	InvalidDomainScheme    Message
+	NothingToStore         Message
+	StoreCredentialFailed  Message
+	LoadCredentialFailed   Message
+	NoCredential           Message
+}
+
+// ParseMessages holds messages of the key=value argument parsing helpers.
+type ParseMessages struct {
+	ExpectedKeyValue Message
+}
+
+// ConfigMessages holds messages of the config file layer.
+type ConfigMessages struct {
+	ReadConfigFileFailed  Message
+	ResolveHomeFailed     Message
+	ParseConfigFileFailed Message
+	CreateConfigDirFailed Message
+	EncodeConfigFailed    Message
+	WriteConfigFileFailed Message
+}
+
+// OutputMessages holds messages of the output formatting layer.
+type OutputMessages struct {
+	UnknownFormat     Message
+	EncodeFailed      Message
+	RowLengthMismatch Message
+}
+
+// Msg is the resolved message tree, populated at init time from the active language.
+var Msg Messages

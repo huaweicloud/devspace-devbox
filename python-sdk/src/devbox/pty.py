@@ -1,0 +1,142 @@
+"""Interactive terminal (PTY) sessions inside a sandbox.
+
+Exposed as :attr:`Sandbox.pty` / :attr:`AsyncSandbox.pty`; input goes through
+:meth:`CommandHandle.send_stdin`, output arrives via the handle's event
+stream.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Mapping
+
+from ._transport import AsyncTransport, SyncTransport
+from .commands import (
+    AsyncCommandHandle,
+    AsyncCommands,
+    CommandHandle,
+    Commands,
+)
+from .models import PtySize
+
+
+class Pty:
+    """Open and reconnect interactive terminal sessions."""
+
+    def __init__(self, commands: Commands, transport: Callable[[], SyncTransport]) -> None:
+        self._commands = commands
+        self._transport = transport
+
+    def start(
+        self,
+        command: str = "/bin/bash",
+        *,
+        size: PtySize | None = None,
+        envs: Mapping[str, str] | None = None,
+        cwd: str | None = None,
+        user: str | None = None,
+    ) -> CommandHandle:
+        """Start an interactive process and return its process handle.
+
+        The first event of the handle's stream carries the process PID.
+        """
+        size = size or PtySize()
+        environment = {"TERM": "xterm-256color", **dict(envs or {})}
+        process: dict[str, object] = {
+            "cmd": command,
+            "args": ["-i", "-l"] if command == "/bin/bash" else [],
+            "envs": environment,
+        }
+        if cwd:
+            process["cwd"] = cwd
+        body = {"process": process}
+        return self._commands.start(body, timeout=None, user=user, pty=size, input_stream="pty")
+
+    def connect(
+        self,
+        pid: int,
+        *,
+        timeout: float | None = None,
+    ) -> CommandHandle:
+        """Reconnect to an interactive process by process ID."""
+        return CommandHandle(
+            pid,
+            self._commands,
+            self._commands.connect_events(pid, timeout),
+            input_stream="pty",
+            reconnect_timeout=timeout,
+        )
+
+    def resize(self, pid: int, size: PtySize) -> None:
+        """Change the terminal dimensions for an interactive process."""
+        self._transport().connect_unary(
+            "/process.Process/Update",
+            json_body={
+                "process": {"pid": pid},
+                "pty": {"size": {"rows": size.rows, "cols": size.cols}},
+            },
+        )
+
+
+class AsyncPty:
+    """Asynchronous counterpart of :class:`Pty`."""
+
+    def __init__(
+        self,
+        commands: AsyncCommands,
+        transport: Callable[[], Awaitable[AsyncTransport]],
+    ) -> None:
+        self._commands = commands
+        self._transport = transport
+
+    async def start(
+        self,
+        command: str = "/bin/bash",
+        *,
+        size: PtySize | None = None,
+        envs: Mapping[str, str] | None = None,
+        cwd: str | None = None,
+        user: str | None = None,
+    ) -> AsyncCommandHandle:
+        """Start an interactive process and return its process handle.
+
+        The first event of the handle's stream carries the process PID.
+        """
+        size = size or PtySize()
+        environment = {"TERM": "xterm-256color", **dict(envs or {})}
+        process: dict[str, object] = {
+            "cmd": command,
+            "args": ["-i", "-l"] if command == "/bin/bash" else [],
+            "envs": environment,
+        }
+        if cwd:
+            process["cwd"] = cwd
+        body = {"process": process}
+        return await self._commands.start(
+            body, timeout=None, user=user, pty=size, input_stream="pty"
+        )
+
+    async def connect(
+        self,
+        pid: int,
+        *,
+        timeout: float | None = None,
+    ) -> AsyncCommandHandle:
+        """Reconnect to an interactive process by process ID."""
+        return AsyncCommandHandle(
+            pid,
+            self._commands,
+            await self._commands.connect_events(pid, timeout),
+            input_stream="pty",
+            reconnect_timeout=timeout,
+        )
+
+    async def resize(self, pid: int, size: PtySize) -> None:
+        """Change the terminal dimensions for an interactive process."""
+        transport = await self._transport()
+        await transport.connect_unary(
+            "/process.Process/Update",
+            json_body={
+                "process": {"pid": pid},
+                "pty": {"size": {"rows": size.rows, "cols": size.cols}},
+            },
+        )

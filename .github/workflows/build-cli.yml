@@ -78,7 +78,7 @@ jobs:
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             echo "is_pr=true" >> "$GITHUB_OUTPUT"
             echo "  发布 Release: 否（PR 触发，跳过发布）"
-          elif echo "$VERSION" | grep -qi "release"; then
+          elif echo "$VERSION" | grep -qiE "release|alpha"; then
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "is_pr=false" >> "$GITHUB_OUTPUT"
             echo "  发布 Release: 是"
