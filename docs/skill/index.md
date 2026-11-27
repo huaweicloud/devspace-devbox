@@ -28,7 +28,7 @@ Skill 内置三条通道，按场景选择：
 ### 通过 Skill 管理器安装
 
 ```bash
-npx skills add https://gitcode.com/developer-skill/huaweicloud-skills.git \
+npx skills add https://gitcode.com/huaweicloud/huaweicloud-skills.git \
   --skill huawei-cloud-devbox-sandbox
 ```
 
